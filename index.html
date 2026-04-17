@@ -3,10 +3,10 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>FinSim — Monte Carlo Financial Simulator</title>
-  <meta name="description" content="Model your financial future with 1,000 Monte Carlo simulations. Explore scenarios like quitting your job, aggressive investing, or buying a house." />
+  <title>FinSim — AI Financial Digital Twin</title>
+  <meta name="description" content="Your AI Financial Digital Twin. Simulate your financial future with 1,000 Monte Carlo paths. Chat with AI, explore scenarios, get personalized behavioral insights." />
   <link rel="stylesheet" href="style.css" />
-  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📊</text></svg>" />
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🧠</text></svg>" />
 </head>
 <body>
   <div class="app-container">
@@ -14,12 +14,13 @@
     <!-- ===== Header ===== -->
     <header class="app-header">
       <div class="app-header__logo">
-        <div class="app-header__icon">📊</div>
+        <div class="app-header__icon">🧠</div>
         <h1 class="app-header__title">FinSim</h1>
+        <span class="app-header__badge">AI Digital Twin</span>
       </div>
       <p class="app-header__subtitle">
-        Model your financial future with Monte Carlo simulations. 
-        1,000 randomized paths. Real trade-offs. No unrealistic promises.
+        Your AI Financial Digital Twin. Simulate your future with 1,000 Monte Carlo paths. 
+        Chat naturally, explore scenarios, get personalized insights.
       </p>
     </header>
 
@@ -48,6 +49,25 @@
         <div class="form-group">
           <label for="input-goal">10-Year Wealth Goal (₹)</label>
           <input type="number" id="input-goal" value="5000000" min="0" step="100000" placeholder="50,00,000" />
+        </div>
+      </div>
+
+      <!-- Behavioral Health Indicators -->
+      <div class="health-indicators" id="health-indicators">
+        <div class="health-indicator" id="health-savings-rate">
+          <span class="health-indicator__icon">💰</span>
+          <span class="health-indicator__label">Savings Rate</span>
+          <span class="health-indicator__value" id="health-savings-rate-value">—</span>
+        </div>
+        <div class="health-indicator" id="health-emergency">
+          <span class="health-indicator__icon">🛡️</span>
+          <span class="health-indicator__label">Emergency Fund</span>
+          <span class="health-indicator__value" id="health-emergency-value">—</span>
+        </div>
+        <div class="health-indicator" id="health-expense-ratio">
+          <span class="health-indicator__icon">📊</span>
+          <span class="health-indicator__label">Expense Ratio</span>
+          <span class="health-indicator__value" id="health-expense-ratio-value">—</span>
         </div>
       </div>
 
@@ -209,8 +229,8 @@
       <!-- Narrative -->
       <div class="narrative-panel glass-card animate-in">
         <div class="narrative-panel__header">
-          <div class="narrative-panel__icon">📝</div>
-          <div class="narrative-panel__title">Analysis & Recommendation</div>
+          <div class="narrative-panel__icon">🧠</div>
+          <div class="narrative-panel__title">AI Analysis & Recommendation</div>
           <div class="narrative-source" id="narrative-source"></div>
         </div>
         <div class="narrative-content" id="narrative-content">
@@ -221,16 +241,63 @@
 
     <!-- ===== Footer ===== -->
     <footer class="app-footer">
-      <p>FinSim — Monte Carlo simulations for financial decision-making. Not financial advice. Results are probabilistic projections based on randomized models.</p>
+      <p>FinSim — AI Financial Digital Twin. Monte Carlo simulations for financial decision-making. Not financial advice. Results are probabilistic projections based on randomized models.</p>
     </footer>
 
+  </div>
+
+  <!-- ===== Chat Panel (Floating) ===== -->
+  <div class="chat-fab" id="chat-fab" title="Ask AI anything">
+    <span class="chat-fab__icon">💬</span>
+    <span class="chat-fab__pulse"></span>
+  </div>
+
+  <div class="chat-panel" id="chat-panel">
+    <div class="chat-panel__header">
+      <div class="chat-panel__header-left">
+        <span class="chat-panel__avatar">🧠</span>
+        <div>
+          <div class="chat-panel__title">FinSim AI</div>
+          <div class="chat-panel__status">Ask me anything about your finances</div>
+        </div>
+      </div>
+      <button class="chat-panel__close" id="chat-close" title="Close">✕</button>
+    </div>
+
+    <div class="chat-panel__messages" id="chat-messages">
+      <div class="chat-message chat-message--ai">
+        <div class="chat-message__avatar">🧠</div>
+        <div class="chat-message__bubble">
+          <p>Hi! I'm your AI Financial Digital Twin. Ask me questions like:</p>
+          <ul>
+            <li>"What if I get a 50% raise?"</li>
+            <li>"What if I start a business?"</li>
+            <li>"Can I save ₹1 crore in 10 years?"</li>
+          </ul>
+          <p>I'll simulate the scenario and give you data-driven insights.</p>
+        </div>
+      </div>
+    </div>
+
+    <div class="chat-panel__prompts" id="chat-prompts">
+      <!-- Filled by JS -->
+    </div>
+
+    <div class="chat-panel__input-area">
+      <input type="text" class="chat-panel__input" id="chat-input" placeholder="Ask about your financial future..." />
+      <button class="chat-panel__send" id="chat-send" title="Send">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 2L11 13M22 2L15 22L11 13M22 2L2 9L11 13"/></svg>
+      </button>
+    </div>
   </div>
 
   <!-- Scripts (order matters) -->
   <script src="js/simulation.js"></script>
   <script src="js/scenarios.js"></script>
   <script src="js/charts.js"></script>
+  <script src="js/behavioral.js"></script>
   <script src="js/narrative.js"></script>
+  <script src="js/chat.js"></script>
   <script src="js/app.js"></script>
 </body>
 </html>

@@ -1,6 +1,6 @@
 /**
- * App Controller
- * Wires DOM events, manages state, orchestrates simulation → render → narrative
+ * App Controller — AI Financial Digital Twin
+ * Wires DOM events, manages state, orchestrates simulation → behavioral → render → narrative → chat
  */
 
 const App = (() => {
@@ -10,7 +10,9 @@ const App = (() => {
     selectedScenario: 'baseline',
     baselineResults: null,
     scenarioResults: null,
-    isRunning: false
+    behavioralReport: null,
+    isRunning: false,
+    chatOpen: false
   };
 
   // --- DOM References ---
@@ -20,6 +22,8 @@ const App = (() => {
     cacheDOMRefs();
     bindEvents();
     selectScenario('baseline');
+    initChat();
+    updateHealthIndicators();
   }
 
   function cacheDOMRefs() {
@@ -35,6 +39,7 @@ const App = (() => {
     DOM.narrativeContent = document.getElementById('narrative-content');
     DOM.narrativeSource = document.getElementById('narrative-source');
     DOM.customPanel = document.getElementById('custom-panel');
+
     // Metric cards
     DOM.metricMedian = document.getElementById('metric-median');
     DOM.metricBest = document.getElementById('metric-best');
@@ -58,6 +63,20 @@ const App = (() => {
     DOM.customReturnStd = document.getElementById('custom-return-std');
     DOM.customIncomeGrowth = document.getElementById('custom-income-growth');
     DOM.customExpenseInflation = document.getElementById('custom-expense-inflation');
+
+    // Health indicators
+    DOM.healthSavingsRate = document.getElementById('health-savings-rate-value');
+    DOM.healthEmergency = document.getElementById('health-emergency-value');
+    DOM.healthExpenseRatio = document.getElementById('health-expense-ratio-value');
+
+    // Chat elements
+    DOM.chatFab = document.getElementById('chat-fab');
+    DOM.chatPanel = document.getElementById('chat-panel');
+    DOM.chatClose = document.getElementById('chat-close');
+    DOM.chatMessages = document.getElementById('chat-messages');
+    DOM.chatInput = document.getElementById('chat-input');
+    DOM.chatSend = document.getElementById('chat-send');
+    DOM.chatPrompts = document.getElementById('chat-prompts');
   }
 
   function bindEvents() {
@@ -72,10 +91,20 @@ const App = (() => {
     DOM.runBtn.addEventListener('click', runSimulation);
 
     // Allow Enter key to trigger run
-    document.querySelectorAll('.form-group input').forEach(input => {
+    document.querySelectorAll('.input-panel .form-group input').forEach(input => {
       input.addEventListener('keydown', (e) => {
         if (e.key === 'Enter') runSimulation();
       });
+      // Update health indicators on input change
+      input.addEventListener('input', debounce(updateHealthIndicators, 300));
+    });
+
+    // Chat events
+    DOM.chatFab.addEventListener('click', toggleChat);
+    DOM.chatClose.addEventListener('click', closeChat);
+    DOM.chatSend.addEventListener('click', handleChatSend);
+    DOM.chatInput.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') handleChatSend();
     });
 
     // Window resize — re-render chart
@@ -90,6 +119,41 @@ const App = (() => {
     });
   }
 
+  function debounce(fn, delay) {
+    let timer;
+    return (...args) => {
+      clearTimeout(timer);
+      timer = setTimeout(() => fn(...args), delay);
+    };
+  }
+
+  // ===================================================
+  // Health Indicators (live update from input fields)
+  // ===================================================
+  function updateHealthIndicators() {
+    const profile = getProfile();
+    const annualExpenses = profile.monthlyExpenses * 12;
+    const savingsRate = ((profile.salary - annualExpenses) / profile.salary) * 100;
+    const emergencyMonths = profile.savings / profile.monthlyExpenses;
+    const expenseRatio = (profile.monthlyExpenses / (profile.salary / 12)) * 100;
+
+    if (DOM.healthSavingsRate) {
+      DOM.healthSavingsRate.textContent = savingsRate.toFixed(1) + '%';
+      DOM.healthSavingsRate.style.color = savingsRate >= 20 ? '#00d4aa' : savingsRate >= 10 ? '#ffd93d' : '#ff6b6b';
+    }
+    if (DOM.healthEmergency) {
+      DOM.healthEmergency.textContent = emergencyMonths.toFixed(1) + ' mo';
+      DOM.healthEmergency.style.color = emergencyMonths >= 6 ? '#00d4aa' : emergencyMonths >= 3 ? '#ffd93d' : '#ff6b6b';
+    }
+    if (DOM.healthExpenseRatio) {
+      DOM.healthExpenseRatio.textContent = expenseRatio.toFixed(0) + '%';
+      DOM.healthExpenseRatio.style.color = expenseRatio <= 50 ? '#00d4aa' : expenseRatio <= 70 ? '#ffd93d' : '#ff6b6b';
+    }
+  }
+
+  // ===================================================
+  // Scenario Selection
+  // ===================================================
   function selectScenario(scenarioId) {
     state.selectedScenario = scenarioId;
 
@@ -97,7 +161,6 @@ const App = (() => {
       card.classList.toggle('active', card.dataset.scenario === scenarioId);
     });
 
-    // Show/hide custom panel
     if (DOM.customPanel) {
       DOM.customPanel.classList.toggle('visible', scenarioId === 'custom');
     }
@@ -117,7 +180,6 @@ const App = (() => {
     const scenarioId = state.selectedScenario;
     let scenario = { ...Scenarios[scenarioId] };
 
-    // Apply custom overrides
     if (scenarioId === 'custom') {
       scenario.returnMean = (parseFloat(DOM.customReturnMean?.value) || 10) / 100;
       scenario.returnStd = (parseFloat(DOM.customReturnStd?.value) || 18) / 100;
@@ -128,6 +190,9 @@ const App = (() => {
     return scenario;
   }
 
+  // ===================================================
+  // Main Simulation Run
+  // ===================================================
   function runSimulation() {
     if (state.isRunning) return;
 
@@ -138,25 +203,26 @@ const App = (() => {
     state.profile = profile;
     state.isRunning = true;
 
-    // UI: loading state
     DOM.runBtn.classList.add('loading');
     DOM.runBtn.disabled = true;
 
-    // Use requestAnimationFrame + setTimeout to let the UI update
     requestAnimationFrame(() => {
       setTimeout(() => {
         try {
-          // Run baseline
           state.baselineResults = SimulationEngine.simulate(profile, baseline, { years: 10, runs: 1000 });
 
-          // Run selected scenario
           if (scenario.id === 'baseline') {
             state.scenarioResults = state.baselineResults;
           } else {
             state.scenarioResults = SimulationEngine.simulate(profile, scenario, { years: 10, runs: 1000 });
           }
 
-          renderResults(state.scenarioResults, state.baselineResults, profile, scenario);
+          // Run behavioral analysis
+          state.behavioralReport = BehavioralEngine.analyze(
+            profile, state.scenarioResults, state.baselineResults, scenario
+          );
+
+          renderResults(state.scenarioResults, state.baselineResults, profile, scenario, state.behavioralReport);
         } catch (err) {
           console.error('Simulation error:', err);
         } finally {
@@ -168,11 +234,12 @@ const App = (() => {
     });
   }
 
-  function renderResults(results, baselineResults, profile, scenario) {
-    // Show results section
+  // ===================================================
+  // Render Results
+  // ===================================================
+  function renderResults(results, baselineResults, profile, scenario, behavioralReport) {
     DOM.resultsSection.classList.add('visible');
 
-    // Smooth scroll to results
     setTimeout(() => {
       DOM.resultsSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
     }, 100);
@@ -180,7 +247,7 @@ const App = (() => {
     const s = results.stats;
     const b = baselineResults.stats;
 
-    // --- Metric cards ---
+    // Metric cards
     animateMetric(DOM.metricMedian, s.final.median);
     animateMetric(DOM.metricBest, s.final.p95);
     animateMetric(DOM.metricWorst, s.final.p5);
@@ -188,7 +255,6 @@ const App = (() => {
     animateMetricPercent(DOM.metricRuin, s.ruinProbability);
     animateMetric(DOM.metricBaseline, b.final.median);
 
-    // Sub labels
     setSubLabel(DOM.metricMedian, 'Most likely outcome');
     setSubLabel(DOM.metricBest, 'Top 5% of outcomes');
     setSubLabel(DOM.metricWorst, 'Bottom 5% of outcomes');
@@ -196,7 +262,7 @@ const App = (() => {
     setSubLabel(DOM.metricRuin, s.ruinProbability > 0 ? `${s.ruinWithin3Prob.toFixed(0)}% within 3 years` : 'Savings remain positive');
     setSubLabel(DOM.metricBaseline, 'Continue working (median)');
 
-    // --- Risk gauge ---
+    // Risk gauge
     const riskScore = computeRiskScore(s);
     const riskInfo = getRiskLabel(riskScore);
     DOM.riskBar.style.width = riskScore + '%';
@@ -206,27 +272,25 @@ const App = (() => {
     DOM.riskScore.textContent = riskScore + '/100';
     DOM.riskScore.style.color = riskInfo.color;
 
-    // --- Fan chart ---
+    // Fan chart
     const baselineOverlay = scenario.id !== 'baseline' ? baselineResults : null;
     ChartRenderer.render(DOM.chartCanvas, results, baselineOverlay, true);
 
-    // --- Comparison ---
+    // Comparison
     renderComparison(s, b, scenario);
 
-    // --- Narrative ---
-    DOM.narrativeContent.innerHTML = '<div class="narrative-loading"><div class="narrative-loading__spinner"></div><span>Preparing analysis...</span></div>';
+    // Narrative (with behavioral report)
+    DOM.narrativeContent.innerHTML = '<div class="narrative-loading"><div class="narrative-loading__spinner"></div><span>Analyzing with AI...</span></div>';
     DOM.narrativeContent.style.opacity = '1';
     DOM.narrativeContent.style.transform = 'translateY(0)';
     if (DOM.narrativeSource) DOM.narrativeSource.innerHTML = '';
 
-    NarrativeGenerator.generate(results, baselineResults, profile, scenario)
+    NarrativeGenerator.generate(results, baselineResults, profile, scenario, behavioralReport)
       .then(({ html, source }) => {
         DOM.narrativeContent.innerHTML = html;
 
         if (DOM.narrativeSource) {
-          DOM.narrativeSource.innerHTML = source === 'template'
-            ? '<span class="source-badge source-badge--template">Local Analysis</span>'
-            : '';
+          DOM.narrativeSource.innerHTML = '<span class="source-badge source-badge--template">AI Analysis</span>';
         }
 
         // Animate in
@@ -240,10 +304,13 @@ const App = (() => {
       })
       .catch(err => {
         console.error('Narrative generation error:', err);
-        DOM.narrativeContent.innerHTML = `<div class="warning-box"><strong>Error:</strong> ${err.message}</div>`;
+        DOM.narrativeContent.innerHTML = `<div class="decision-verdict decision-verdict--risky"><strong>Error:</strong> ${err.message}</div>`;
       });
   }
 
+  // ===================================================
+  // Animation Helpers
+  // ===================================================
   function animateMetric(el, value) {
     if (!el) return;
     const valueEl = el.querySelector('.metric-card__value');
@@ -300,7 +367,6 @@ const App = (() => {
       { label: 'Mean', key: 'mean' }
     ];
 
-    // Baseline column
     if (DOM.compBaseline) {
       DOM.compBaseline.innerHTML = rows.map(row => `
         <div class="comparison-row">
@@ -310,7 +376,6 @@ const App = (() => {
       `).join('');
     }
 
-    // Scenario column
     if (DOM.compScenario) {
       DOM.compScenario.innerHTML = rows.map(row => {
         const diff = s.final[row.key] - b.final[row.key];
@@ -327,10 +392,181 @@ const App = (() => {
       }).join('');
     }
 
-    // Update scenario title
     if (DOM.compScenarioTitle) {
       DOM.compScenarioTitle.innerHTML = `<span class="dot"></span> ${scenario.name}`;
     }
+  }
+
+  // ===================================================
+  // Chat System
+  // ===================================================
+  function initChat() {
+    renderSuggestedPrompts();
+  }
+
+  function toggleChat() {
+    if (state.chatOpen) {
+      closeChat();
+    } else {
+      openChat();
+    }
+  }
+
+  function openChat() {
+    state.chatOpen = true;
+    DOM.chatPanel.classList.add('visible');
+    DOM.chatFab.classList.add('hidden');
+    DOM.chatInput.focus();
+  }
+
+  function closeChat() {
+    state.chatOpen = false;
+    DOM.chatPanel.classList.remove('visible');
+    DOM.chatFab.classList.remove('hidden');
+  }
+
+  function renderSuggestedPrompts() {
+    const prompts = ChatEngine.getRandomPrompts(4);
+    if (DOM.chatPrompts) {
+      DOM.chatPrompts.innerHTML = prompts.map(p =>
+        `<button class="chat-prompt-chip" data-prompt="${p}">${p}</button>`
+      ).join('');
+
+      DOM.chatPrompts.querySelectorAll('.chat-prompt-chip').forEach(chip => {
+        chip.addEventListener('click', () => {
+          DOM.chatInput.value = chip.dataset.prompt;
+          handleChatSend();
+        });
+      });
+    }
+  }
+
+  function handleChatSend() {
+    const message = DOM.chatInput.value.trim();
+    if (!message || state.isRunning) return;
+
+    // Add user message
+    addChatMessage(message, 'user');
+    DOM.chatInput.value = '';
+
+    // Show typing indicator
+    const typingId = addTypingIndicator();
+
+    // Detect intent
+    const intent = ChatEngine.detectIntent(message);
+
+    if (!intent.matched) {
+      // Unknown intent
+      setTimeout(() => {
+        removeTypingIndicator(typingId);
+        addChatMessage(
+          `<p>I couldn't parse a specific financial scenario from your question. Try asking something like:</p>
+          <ul>
+            <li>"What if I get a 30% raise?"</li>
+            <li>"What if I start a business?"</li>
+            <li>"What if my expenses become ₹50,000/month?"</li>
+            <li>"Can I save ₹1 crore in 10 years?"</li>
+          </ul>
+          <p>I work best with clear financial what-if scenarios.</p>`,
+          'ai'
+        );
+        renderSuggestedPrompts();
+      }, 600);
+      return;
+    }
+
+    // Build scenario from intent
+    const profile = getProfile();
+    const scenarioResult = ChatEngine.buildScenarioFromIntent(intent, profile);
+    const chatProfile = { ...profile, ...scenarioResult.profileOverride };
+
+    // Add assumptions to intent for response generation
+    intent.assumptions = scenarioResult.assumptions;
+
+    // Run simulation
+    setTimeout(() => {
+      try {
+        const simOptions = {
+          years: scenarioResult.simulationOverride?.years || 10,
+          runs: 1000
+        };
+
+        const baselineResults = SimulationEngine.simulate(chatProfile, Scenarios.baseline, simOptions);
+        const scenarioResults = SimulationEngine.simulate(chatProfile, scenarioResult.scenario, simOptions);
+
+        // Run behavioral analysis
+        const behavioralReport = BehavioralEngine.analyze(
+          chatProfile, scenarioResults, baselineResults, scenarioResult.scenario
+        );
+
+        // Generate chat response
+        const responseHtml = ChatEngine.generateChatResponse(
+          intent, scenarioResults, baselineResults, chatProfile, scenarioResult.scenario, behavioralReport
+        );
+
+        removeTypingIndicator(typingId);
+        addChatMessage(responseHtml, 'ai');
+
+        // Also update main UI if user wants
+        state.baselineResults = baselineResults;
+        state.scenarioResults = scenarioResults;
+        state.behavioralReport = behavioralReport;
+        state.profile = chatProfile;
+
+        renderResults(scenarioResults, baselineResults, chatProfile, scenarioResult.scenario, behavioralReport);
+      } catch (err) {
+        console.error('Chat simulation error:', err);
+        removeTypingIndicator(typingId);
+        addChatMessage(`<p>An error occurred during simulation: ${err.message}</p>`, 'ai');
+      }
+
+      renderSuggestedPrompts();
+    }, 800);
+  }
+
+  function addChatMessage(content, type) {
+    const div = document.createElement('div');
+    div.className = `chat-message chat-message--${type}`;
+
+    const avatar = type === 'ai' ? '🧠' : '👤';
+    div.innerHTML = `
+      <div class="chat-message__avatar">${avatar}</div>
+      <div class="chat-message__bubble">${type === 'user' ? `<p>${escapeHtml(content)}</p>` : content}</div>
+    `;
+
+    DOM.chatMessages.appendChild(div);
+    DOM.chatMessages.scrollTop = DOM.chatMessages.scrollHeight;
+  }
+
+  function addTypingIndicator() {
+    const id = 'typing-' + Date.now();
+    const div = document.createElement('div');
+    div.className = 'chat-message chat-message--ai';
+    div.id = id;
+    div.innerHTML = `
+      <div class="chat-message__avatar">🧠</div>
+      <div class="chat-message__bubble">
+        <div class="typing-indicator">
+          <div class="typing-indicator__dot"></div>
+          <div class="typing-indicator__dot"></div>
+          <div class="typing-indicator__dot"></div>
+        </div>
+      </div>
+    `;
+    DOM.chatMessages.appendChild(div);
+    DOM.chatMessages.scrollTop = DOM.chatMessages.scrollHeight;
+    return id;
+  }
+
+  function removeTypingIndicator(id) {
+    const el = document.getElementById(id);
+    if (el) el.remove();
+  }
+
+  function escapeHtml(text) {
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
   }
 
   // --- Initialize on DOM ready ---
@@ -340,5 +576,5 @@ const App = (() => {
     init();
   }
 
-  return { runSimulation, selectScenario };
+  return { runSimulation, selectScenario, toggleChat };
 })();
