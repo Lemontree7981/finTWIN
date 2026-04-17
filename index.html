@@ -3,10 +3,10 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>FinSim — AI Financial Digital Twin</title>
+  <title>finTWIN — AI Financial Digital Twin</title>
   <meta name="description" content="Your AI Financial Digital Twin. Simulate your financial future with 1,000 Monte Carlo paths. Chat with AI, explore scenarios, get personalized behavioral insights." />
   <link rel="stylesheet" href="style.css" />
-  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🧠</text></svg>" />
+  <link rel="icon" href="data:image/svg+xml,<svg width='100' height='100' viewBox='0 0 100 100' fill='none' xmlns='http://www.w3.org/2000/svg'><path d='M30 25H75V35H58L48 75H38L48 35H30V25Z' fill='black'/><path d='M52 45H65V55H50L52 45Z' fill='black'/></svg>" />
 </head>
 <body>
   <div class="app-container">
@@ -14,8 +14,13 @@
     <!-- ===== Header ===== -->
     <header class="app-header">
       <div class="app-header__logo">
-        <div class="app-header__icon">🧠</div>
-        <h1 class="app-header__title">FinSim</h1>
+        <div class="app-header__icon">
+          <svg width="40" height="40" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <path d="M30 25H75V35H58L48 75H38L48 35H30V25Z" fill="white"/>
+            <path d="M52 45H65V55H50L52 45Z" fill="white"/>
+          </svg>
+        </div>
+        <h1 class="app-header__title">finTWIN</h1>
         <span class="app-header__badge">AI Digital Twin</span>
       </div>
       <p class="app-header__subtitle">
@@ -398,7 +403,7 @@
 
     <!-- ===== Footer ===== -->
     <footer class="app-footer">
-      <p>FinSim — AI Financial Digital Twin. Monte Carlo simulations for financial decision-making. Not financial advice. Results are probabilistic projections based on randomized models.</p>
+      <p>finTWIN — AI Financial Digital Twin. Monte Carlo simulations for financial decision-making. Not financial advice. Results are probabilistic projections based on randomized models.</p>
     </footer>
 
   </div>
@@ -415,9 +420,14 @@
   <div class="chat-panel" id="chat-panel">
     <div class="chat-panel__header">
       <div class="chat-panel__header-left">
-        <span class="chat-panel__avatar">🧠</span>
+        <span class="chat-panel__avatar">
+          <svg width="24" height="24" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <path d="M30 25H75V35H58L48 75H38L48 35H30V25Z" fill="white"/>
+            <path d="M52 45H65V55H50L52 45Z" fill="white"/>
+          </svg>
+        </span>
         <div>
-          <div class="chat-panel__title">FinSim AI</div>
+          <div class="chat-panel__title">finTWIN AI</div>
           <div class="chat-panel__status" id="chat-status" data-mode="local">Ask me anything about your finances</div>
         </div>
       </div>
@@ -426,7 +436,12 @@
 
     <div class="chat-panel__messages" id="chat-messages">
       <div class="chat-message chat-message--ai">
-        <div class="chat-message__avatar">🧠</div>
+        <div class="chat-message__avatar">
+          <svg width="18" height="18" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <path d="M30 25H75V35H58L48 75H38L48 35H30V25Z" fill="white"/>
+            <path d="M52 45H65V55H50L52 45Z" fill="white"/>
+          </svg>
+        </div>
         <div class="chat-message__bubble">
           <p>Hi! I'm your AI Financial Digital Twin. I can remember your goals during this session, turn life plans into simulations, and update the dashboard from plain English.</p>
           <p>Try prompts like:</p>

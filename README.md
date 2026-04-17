@@ -1,61 +1,74 @@
-# FinSim
+# finTWIN — AI Financial Digital Twin
 
-Static Monte Carlo financial simulator for exploring 10-year wealth outcomes under different life and investing scenarios, with an AI-native planning layer on top.
+finTWIN is a high-fidelity, client-side **Monte Carlo Financial Simulator** designed to model long-term wealth trajectories under various life and investing scenarios. It combines rigorous stochastic modeling with a natural-language **AI Planning Layer**, allowing users to explore their financial future through conversational "what-if" analysis.
 
-## What It Does
+![finTWIN Dashboard](https://github.com/sabeeh/finTWIN/raw/main/screenshot.png) *(Note: Placeholder for actual screenshot)*
 
-- Runs 1,000 Monte Carlo simulations in the browser
-- Compares baseline and alternate scenarios like quitting a job, buying a house, or switching careers
-- Visualizes projected wealth ranges with a fan chart
-- Generates local, template-based analysis with no external APIs or secrets required
-- Extracts structured timelines from free-form life plans in chat
-- Remembers goals, risk preferences, and major planned events during the session
-- Supports natural-language dashboard controls such as salary, inflation, and portfolio changes
-- Reverse-plans toward targets like "I want Rs 1 crore by age 40"
+## 🚀 Key Features
 
-## Project Structure
+- **Monte Carlo Engine**: Executes 1,000+ simulations in real-time to generate probabilistic wealth outcomes (Median, Best Case P95, and Worst Case P5).
+- **Conversational Planning**: Features an integrated AI assistant that understands complex life plans (e.g., *"What if I buy a house in 2 years and have a kid in 4 years?"*) and updates the simulation instantly.
+- **AI Behavioral Analysis**: Detects patterns in your financial profile and provides personalized health scores, identifying risks like lifestyle inflation, insufficient runway, or low savings rates.
+- **Dynamic Scenarios**: Explore pre-built or custom scenarios including:
+    - **Career Transitions**: Models short-term cuts for long-term growth.
+    - **Real Estate**: Evaluates EMI impacts vs. property equity buildup.
+    - **Aggressive Investing**: Simulates high-volatility equity strategies with custom crash behaviors.
+    - **Business Ventures**: Models bimodal outcomes for startup/quit-job scenarios.
+- **Actionable AI Recommendations**: Generates structured narrative reports with specific action items (Immediate, Short-term, Long-term) and earning strategies to bridge wealth gaps.
+- **Privacy-First**: Perfroms all heavy lifting client-side. No financial data is sent to a server (API keys are handled locally).
 
-- `index.html` contains the app shell
-- `style.css` contains the UI styling
-- `js/simulation.js` runs the Monte Carlo engine
-- `js/scenarios.js` defines preset scenarios
-- `js/charts.js` renders the chart output
-- `js/narrative.js` builds the analysis panel from simulation results
-- `js/planner.js` handles AI-style planning, memory, controls, and reverse planning
-- `js/app.js` wires the UI together
+## 🛠️ Tech Stack
 
-## Run Locally
+Built with a focus on high-performance visualization and modular logic without the overhead of heavy frameworks:
 
-Open `index.html` in a browser.
+- **Core**: Vanilla HTML5, CSS3, and ES6+ JavaScript.
+- **Visualization**: Custom-built **HTML5 Canvas API** renderer for high-frame-rate Fan Charts and performance-critical animations.
+- **AI Intelligence**: 
+    - **Gemini Pro 1.5 API**: Orchestrates complex planning and natural language interpretation.
+    - **Deterministic Parser**: Fallback logic for rule-based planning when API is unavailable.
+- **Typography**: Inter (Sans-serif) for UI clarity and JetBrains Mono for financial data readability.
+- **Design System**: Modern **Glassmorphism** architecture using CSS design tokens, backdrop-filters, and motion-rich transitions.
 
-If you want a local server instead:
+## 📁 Project Structure
 
 ```bash
-python3 -m http.server
+├── index.html          # Main application shell & UI components
+├── style.css           # Premium glassmorphic design system & layout
+├── js/
+│   ├── app.js          # Master controller & state orchestration
+│   ├── simulation.js   # Core Monte Carlo stochastic engine
+│   ├── planner.js      # AI-native memory & composite life-planning
+│   ├── behavioral.js   # Pattern detection & financial health engine
+│   ├── narrative.js    # AI Analysis & Action Plan generator
+│   ├── charts.js       # High-performance Canvas trajectory renderer
+│   ├── chat.js         # Conversational UI & intent detection
+│   ├── chat-api.js     # External AI integration layer (Gemini)
+│   ├── config.js       # Framework-level constants & defaults
+│   └── config.local.js # User-specific API configurations (Git-ignored)
 ```
 
-Then open `http://localhost:8000`.
+## 💻 Local Development
 
-## GitHub Ready
+1. **Clone the repo**:
+   ```bash
+   git clone https://github.com/sabeeh/finTWIN.git
+   ```
+2. **Launch**:
+   Simply open `index.html` in any modern browser. No build steps or `npm install` required.
+   
+3. **Configure AI (Optional)**:
+   To enable live Gemini AI planning:
+   - Rename `js/config.js` patterns or create `js/config.local.js`.
+   - Add your `GEMINI_API_KEY`.
+   - The app will automatically switch from "Local Mode" to "Live AI Mode".
 
-This version is still fully client-side, but the chat now supports an optional local config file:
+## ☁️ Deployment
 
-- `js/config.js` holds the committed defaults
-- `js/config.local.js` can hold your local API key and provider settings
+finTWIN is production-ready for **Vercel** or **GitHub Pages**. 
+- **Preset**: Other / Vanilla
+- **Build Command**: None
+- **Output Directory**: `.` (Root)
 
-Important:
+## ⚖️ Disclaimer
 
-- `js/config.local.js` is ignored by git
-- Because this app runs in the browser, any key placed there is still visible to anyone who can open the app source
-- If your provider blocks browser-side requests or you need stronger key protection, use a backend proxy instead
-
-## AI-Native Chat Behaviors
-
-The chat can now do more than rule-based what-if prompts:
-
-- Convert multi-step plans such as "buy a house in 2 years, have a kid in 4 years, and switch jobs" into a composite simulation
-- Remember session context like your target corpus, risk style, and major planned life events
-- Accept direct controls like "set inflation to 6%" or "make this a conservative portfolio"
-- Work backward from target goals and suggest a higher-level action plan
-
-The remote model integration is still optional. If no API is configured, the planner runs locally in the browser using deterministic parsing plus the Monte Carlo engine.
+finTWIN is an educational simulation tool. It uses randomized probabilistic models to project potential outcomes. It does not constitute financial advice. Always consult with a certified financial professional before making major life decisions.
