@@ -1,0 +1,236 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>FinSim — Monte Carlo Financial Simulator</title>
+  <meta name="description" content="Model your financial future with 1,000 Monte Carlo simulations. Explore scenarios like quitting your job, aggressive investing, or buying a house." />
+  <link rel="stylesheet" href="style.css" />
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📊</text></svg>" />
+</head>
+<body>
+  <div class="app-container">
+
+    <!-- ===== Header ===== -->
+    <header class="app-header">
+      <div class="app-header__logo">
+        <div class="app-header__icon">📊</div>
+        <h1 class="app-header__title">FinSim</h1>
+      </div>
+      <p class="app-header__subtitle">
+        Model your financial future with Monte Carlo simulations. 
+        1,000 randomized paths. Real trade-offs. No unrealistic promises.
+      </p>
+    </header>
+
+    <!-- ===== Input Panel ===== -->
+    <section class="input-panel glass-card" id="input-panel">
+
+      <div class="section-title">Your Financial Profile</div>
+
+      <div class="input-grid">
+        <div class="form-group">
+          <label for="input-age">Age</label>
+          <input type="number" id="input-age" value="28" min="18" max="70" placeholder="28" />
+        </div>
+        <div class="form-group">
+          <label for="input-salary">Annual Salary (₹)</label>
+          <input type="number" id="input-salary" value="800000" min="0" step="50000" placeholder="8,00,000" />
+        </div>
+        <div class="form-group">
+          <label for="input-savings">Current Savings (₹)</label>
+          <input type="number" id="input-savings" value="300000" min="0" step="10000" placeholder="3,00,000" />
+        </div>
+        <div class="form-group">
+          <label for="input-expenses">Monthly Expenses (₹)</label>
+          <input type="number" id="input-expenses" value="35000" min="0" step="1000" placeholder="35,000" />
+        </div>
+        <div class="form-group">
+          <label for="input-goal">10-Year Wealth Goal (₹)</label>
+          <input type="number" id="input-goal" value="5000000" min="0" step="100000" placeholder="50,00,000" />
+        </div>
+      </div>
+
+      <!-- Scenario Selection -->
+      <div class="scenarios-section">
+        <div class="section-title">Choose a Scenario</div>
+        <div class="scenario-grid">
+          <div class="scenario-card active" data-scenario="baseline" id="scenario-baseline">
+            <span class="scenario-card__icon">💼</span>
+            <div class="scenario-card__name">Continue Working</div>
+            <div class="scenario-card__desc">Normal salary growth & investing</div>
+          </div>
+          <div class="scenario-card" data-scenario="quit_job" id="scenario-quit-job">
+            <span class="scenario-card__icon">🚀</span>
+            <div class="scenario-card__name">Quit & Start Business</div>
+            <div class="scenario-card__desc">High risk, high potential reward</div>
+          </div>
+          <div class="scenario-card" data-scenario="aggressive" id="scenario-aggressive">
+            <span class="scenario-card__icon">📈</span>
+            <div class="scenario-card__name">Aggressive Investing</div>
+            <div class="scenario-card__desc">Higher equity allocation</div>
+          </div>
+          <div class="scenario-card" data-scenario="buy_house" id="scenario-buy-house">
+            <span class="scenario-card__icon">🏠</span>
+            <div class="scenario-card__name">Buy a House</div>
+            <div class="scenario-card__desc">EMI commitment + property equity</div>
+          </div>
+          <div class="scenario-card" data-scenario="career_switch" id="scenario-career-switch">
+            <span class="scenario-card__icon">🔄</span>
+            <div class="scenario-card__name">Career Switch</div>
+            <div class="scenario-card__desc">Short-term cut, long-term growth</div>
+          </div>
+          <div class="scenario-card" data-scenario="custom" id="scenario-custom">
+            <span class="scenario-card__icon">⚙️</span>
+            <div class="scenario-card__name">Custom</div>
+            <div class="scenario-card__desc">Define your own parameters</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Custom Scenario Parameters -->
+      <div class="custom-panel" id="custom-panel">
+        <div class="section-title">Custom Parameters</div>
+        <div class="input-grid">
+          <div class="form-group">
+            <label for="custom-return-mean">Expected Return (%/yr)</label>
+            <input type="number" id="custom-return-mean" value="10" min="0" max="30" step="0.5" />
+          </div>
+          <div class="form-group">
+            <label for="custom-return-std">Return Volatility (%/yr)</label>
+            <input type="number" id="custom-return-std" value="18" min="0" max="50" step="1" />
+          </div>
+          <div class="form-group">
+            <label for="custom-income-growth">Income Growth (%/yr)</label>
+            <input type="number" id="custom-income-growth" value="6" min="0" max="20" step="0.5" />
+          </div>
+          <div class="form-group">
+            <label for="custom-expense-inflation">Expense Inflation (%/yr)</label>
+            <input type="number" id="custom-expense-inflation" value="5" min="0" max="15" step="0.5" />
+          </div>
+        </div>
+      </div>
+
+      <!-- Run Button -->
+      <div style="text-align: center; margin-top: 8px;">
+        <button class="run-btn" id="run-btn">
+          <div class="spinner"></div>
+          <span class="btn-text">Run 1,000 Simulations</span>
+        </button>
+      </div>
+    </section>
+
+    <!-- ===== Results Section ===== -->
+    <section class="results-section" id="results-section">
+
+      <!-- Metric Cards -->
+      <div class="metrics-grid">
+        <div class="metric-card glass-card metric-card--median animate-in" id="metric-median">
+          <div class="metric-card__label">Median Net Worth (10yr)</div>
+          <div class="metric-card__value">—</div>
+          <div class="metric-card__sub">Most likely outcome</div>
+        </div>
+        <div class="metric-card glass-card metric-card--best animate-in animate-in-delay-1" id="metric-best">
+          <div class="metric-card__label">Best Case (P95)</div>
+          <div class="metric-card__value">—</div>
+          <div class="metric-card__sub">Top 5% of outcomes</div>
+        </div>
+        <div class="metric-card glass-card metric-card--worst animate-in animate-in-delay-2" id="metric-worst">
+          <div class="metric-card__label">Worst Case (P5)</div>
+          <div class="metric-card__value">—</div>
+          <div class="metric-card__sub">Bottom 5% of outcomes</div>
+        </div>
+        <div class="metric-card glass-card metric-card--goal animate-in animate-in-delay-3" id="metric-goal">
+          <div class="metric-card__label">Goal Probability</div>
+          <div class="metric-card__value">—</div>
+          <div class="metric-card__sub">Chance of reaching target</div>
+        </div>
+        <div class="metric-card glass-card metric-card--ruin animate-in animate-in-delay-4" id="metric-ruin">
+          <div class="metric-card__label">Ruin Probability</div>
+          <div class="metric-card__value">—</div>
+          <div class="metric-card__sub">Chance of going broke</div>
+        </div>
+        <div class="metric-card glass-card metric-card--baseline animate-in animate-in-delay-5" id="metric-baseline">
+          <div class="metric-card__label">Baseline Median</div>
+          <div class="metric-card__value">—</div>
+          <div class="metric-card__sub">Continue working (reference)</div>
+        </div>
+      </div>
+
+      <!-- Risk Gauge -->
+      <div class="risk-gauge glass-card animate-in">
+        <span class="risk-gauge__label" id="risk-label">—</span>
+        <div class="risk-gauge__bar-wrap">
+          <div class="risk-gauge__bar" id="risk-bar" style="width: 0%"></div>
+        </div>
+        <span class="risk-gauge__score" id="risk-score">—</span>
+      </div>
+
+      <!-- Fan Chart -->
+      <div class="chart-container glass-card animate-in">
+        <div class="chart-container__header">
+          <div class="chart-container__title">Wealth Trajectory — 10 Year Projection</div>
+          <div class="chart-legend">
+            <div class="chart-legend__item">
+              <span class="chart-legend__swatch" style="background: #ffd93d; height: 2px;"></span>
+              Median
+            </div>
+            <div class="chart-legend__item">
+              <span class="chart-legend__swatch" style="background: rgba(0,212,170,0.35);"></span>
+              P25–P75
+            </div>
+            <div class="chart-legend__item">
+              <span class="chart-legend__swatch" style="background: rgba(0,212,170,0.15);"></span>
+              P5–P95
+            </div>
+            <div class="chart-legend__item">
+              <span class="chart-legend__swatch" style="background: #a78bfa; height: 2px; border: 1px dashed #a78bfa; background: none;"></span>
+              Baseline
+            </div>
+          </div>
+        </div>
+        <div class="chart-canvas-wrap">
+          <canvas id="fan-chart"></canvas>
+        </div>
+      </div>
+
+      <!-- Comparison -->
+      <div class="comparison-grid">
+        <div class="comparison-card glass-card comparison-card--baseline animate-in">
+          <div class="comparison-card__title"><span class="dot"></span> Baseline (Continue Working)</div>
+          <div id="comp-baseline"></div>
+        </div>
+        <div class="comparison-card glass-card comparison-card--scenario animate-in animate-in-delay-1">
+          <div class="comparison-card__title" id="comp-scenario-title"><span class="dot"></span> Selected Scenario</div>
+          <div id="comp-scenario"></div>
+        </div>
+      </div>
+
+      <!-- Narrative -->
+      <div class="narrative-panel glass-card animate-in">
+        <div class="narrative-panel__header">
+          <div class="narrative-panel__icon">📝</div>
+          <div class="narrative-panel__title">Analysis & Recommendation</div>
+          <div class="narrative-source" id="narrative-source"></div>
+        </div>
+        <div class="narrative-content" id="narrative-content">
+          <!-- Filled by narrative.js -->
+        </div>
+      </div>
+    </section>
+
+    <!-- ===== Footer ===== -->
+    <footer class="app-footer">
+      <p>FinSim — Monte Carlo simulations for financial decision-making. Not financial advice. Results are probabilistic projections based on randomized models.</p>
+    </footer>
+
+  </div>
+
+  <!-- Scripts (order matters) -->
+  <script src="js/simulation.js"></script>
+  <script src="js/scenarios.js"></script>
+  <script src="js/charts.js"></script>
+  <script src="js/narrative.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>

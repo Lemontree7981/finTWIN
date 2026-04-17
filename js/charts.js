@@ -1,0 +1,366 @@
+/**
+ * Canvas-based Fan Chart Renderer
+ * Draws percentile bands + median line for simulation results
+ */
+
+const ChartRenderer = (() => {
+  const COLORS = {
+    p5_p95:  { fill: 'rgba(0, 212, 170, 0.06)', stroke: 'rgba(0, 212, 170, 0.15)' },
+    p10_p90: { fill: 'rgba(0, 212, 170, 0.08)', stroke: 'rgba(0, 212, 170, 0.2)' },
+    p25_p75: { fill: 'rgba(0, 212, 170, 0.12)', stroke: 'rgba(0, 212, 170, 0.25)' },
+    median:  { stroke: '#ffd93d', width: 2.5 },
+    baseline:{ stroke: '#a78bfa', width: 1.5, dash: [6, 4] },
+    grid:    { stroke: 'rgba(255, 255, 255, 0.05)' },
+    axis:    { stroke: 'rgba(255, 255, 255, 0.1)' },
+    text:    'rgba(255, 255, 255, 0.45)',
+    zero:    'rgba(255, 107, 107, 0.3)'
+  };
+
+  const PADDING = { top: 30, right: 30, bottom: 50, left: 80 };
+
+  /**
+   * Render the fan chart
+   * @param {HTMLCanvasElement} canvas
+   * @param {Object} results - simulation results from SimulationEngine
+   * @param {Object} [baselineResults] - optional baseline for comparison
+   * @param {boolean} [animate] - whether to animate the draw
+   */
+  function render(canvas, results, baselineResults = null, animate = true) {
+    const ctx = canvas.getContext('2d');
+    const dpr = window.devicePixelRatio || 1;
+
+    // Set canvas size matching container
+    const rect = canvas.parentElement.getBoundingClientRect();
+    canvas.width = rect.width * dpr;
+    canvas.height = rect.height * dpr;
+    canvas.style.width = rect.width + 'px';
+    canvas.style.height = rect.height + 'px';
+    ctx.scale(dpr, dpr);
+
+    const w = rect.width;
+    const h = rect.height;
+    const plotW = w - PADDING.left - PADDING.right;
+    const plotH = h - PADDING.top - PADDING.bottom;
+
+    const yearly = results.stats.yearly;
+    const years = results.years;
+
+    // Determine Y range
+    let yMin = Infinity, yMax = -Infinity;
+    for (const ys of yearly) {
+      yMin = Math.min(yMin, ys.p5);
+      yMax = Math.max(yMax, ys.p95);
+    }
+    if (baselineResults) {
+      for (const ys of baselineResults.stats.yearly) {
+        yMin = Math.min(yMin, ys.p5);
+        yMax = Math.max(yMax, ys.p95);
+      }
+    }
+
+    // Add 10% padding
+    const yRange = yMax - yMin || 1;
+    yMin -= yRange * 0.08;
+    yMax += yRange * 0.08;
+
+    // Scale functions
+    const xScale = (year) => PADDING.left + (year / years) * plotW;
+    const yScale = (val) => PADDING.top + (1 - (val - yMin) / (yMax - yMin)) * plotH;
+
+    if (animate) {
+      animateDraw(ctx, w, h, plotW, plotH, yearly, years, yMin, yMax, xScale, yScale, baselineResults);
+    } else {
+      drawFull(ctx, w, h, plotW, plotH, yearly, years, yMin, yMax, xScale, yScale, baselineResults);
+    }
+  }
+
+  function drawFull(ctx, w, h, plotW, plotH, yearly, years, yMin, yMax, xScale, yScale, baselineResults) {
+    ctx.clearRect(0, 0, w, h);
+    drawGrid(ctx, w, h, plotW, plotH, years, yMin, yMax, xScale, yScale);
+    drawBands(ctx, yearly, years, xScale, yScale, 1);
+    if (baselineResults) {
+      drawBaselineLine(ctx, baselineResults.stats.yearly, years, xScale, yScale, 1);
+    }
+    drawMedianLine(ctx, yearly, years, xScale, yScale, 1);
+    drawAxes(ctx, w, h, plotW, plotH, years, yMin, yMax, xScale, yScale);
+    drawZeroLine(ctx, yMin, yMax, xScale, yScale, years, plotW);
+  }
+
+  function animateDraw(ctx, w, h, plotW, plotH, yearly, years, yMin, yMax, xScale, yScale, baselineResults) {
+    let progress = 0;
+    const duration = 800; // ms
+    const startTime = performance.now();
+
+    function frame(now) {
+      progress = Math.min(1, (now - startTime) / duration);
+      // Ease out cubic
+      const eased = 1 - Math.pow(1 - progress, 3);
+
+      ctx.clearRect(0, 0, w, h);
+      drawGrid(ctx, w, h, plotW, plotH, years, yMin, yMax, xScale, yScale);
+      drawBands(ctx, yearly, years, xScale, yScale, eased);
+      if (baselineResults) {
+        drawBaselineLine(ctx, baselineResults.stats.yearly, years, xScale, yScale, eased);
+      }
+      drawMedianLine(ctx, yearly, years, xScale, yScale, eased);
+      drawAxes(ctx, w, h, plotW, plotH, years, yMin, yMax, xScale, yScale);
+      drawZeroLine(ctx, yMin, yMax, xScale, yScale, years, plotW);
+
+      if (progress < 1) {
+        requestAnimationFrame(frame);
+      }
+    }
+
+    requestAnimationFrame(frame);
+  }
+
+  function drawGrid(ctx, w, h, plotW, plotH, years, yMin, yMax, xScale, yScale) {
+    ctx.strokeStyle = COLORS.grid.stroke;
+    ctx.lineWidth = 1;
+
+    // Horizontal grid lines
+    const yTicks = niceScale(yMin, yMax, 5);
+    for (const val of yTicks) {
+      const y = yScale(val);
+      ctx.beginPath();
+      ctx.moveTo(PADDING.left, y);
+      ctx.lineTo(PADDING.left + plotW, y);
+      ctx.stroke();
+    }
+
+    // Vertical grid lines
+    for (let yr = 0; yr <= years; yr++) {
+      const x = xScale(yr);
+      ctx.beginPath();
+      ctx.moveTo(x, PADDING.top);
+      ctx.lineTo(x, PADDING.top + plotH);
+      ctx.stroke();
+    }
+  }
+
+  function drawBands(ctx, yearly, years, xScale, yScale, progress) {
+    const maxYear = Math.floor(years * progress);
+    const fractional = (years * progress) - maxYear;
+
+    // P5-P95 band
+    drawBand(ctx, yearly, 'p5', 'p95', xScale, yScale, COLORS.p5_p95.fill, maxYear, fractional);
+    // P10-P90 band
+    drawBand(ctx, yearly, 'p10', 'p90', xScale, yScale, COLORS.p10_p90.fill, maxYear, fractional);
+    // P25-P75 band
+    drawBand(ctx, yearly, 'p25', 'p75', xScale, yScale, COLORS.p25_p75.fill, maxYear, fractional);
+  }
+
+  function drawBand(ctx, yearly, lowKey, highKey, xScale, yScale, fillStyle, maxYear, fractional) {
+    ctx.fillStyle = fillStyle;
+    ctx.beginPath();
+
+    // Upper edge (forward)
+    for (let y = 0; y <= maxYear && y < yearly.length; y++) {
+      const x = xScale(y);
+      const val = yScale(yearly[y][highKey]);
+      if (y === 0) ctx.moveTo(x, val);
+      else ctx.lineTo(x, val);
+    }
+
+    // Interpolate fractional year
+    if (fractional > 0 && maxYear + 1 < yearly.length) {
+      const y0 = yearly[maxYear][highKey];
+      const y1 = yearly[maxYear + 1][highKey];
+      const interp = y0 + (y1 - y0) * fractional;
+      ctx.lineTo(xScale(maxYear + fractional), yScale(interp));
+    }
+
+    // Lower edge (backward)
+    const endIdx = fractional > 0 && maxYear + 1 < yearly.length ? maxYear + 1 : maxYear;
+    if (fractional > 0 && maxYear + 1 < yearly.length) {
+      const y0 = yearly[maxYear][lowKey];
+      const y1 = yearly[maxYear + 1][lowKey];
+      const interp = y0 + (y1 - y0) * fractional;
+      ctx.lineTo(xScale(maxYear + fractional), yScale(interp));
+    }
+
+    for (let y = Math.min(maxYear, yearly.length - 1); y >= 0; y--) {
+      const x = xScale(y);
+      const val = yScale(yearly[y][lowKey]);
+      ctx.lineTo(x, val);
+    }
+
+    ctx.closePath();
+    ctx.fill();
+  }
+
+  function drawMedianLine(ctx, yearly, years, xScale, yScale, progress) {
+    const maxYear = Math.floor(years * progress);
+    const fractional = (years * progress) - maxYear;
+
+    ctx.strokeStyle = COLORS.median.stroke;
+    ctx.lineWidth = COLORS.median.width;
+    ctx.setLineDash([]);
+    ctx.lineJoin = 'round';
+    ctx.lineCap = 'round';
+
+    // Glow effect
+    ctx.shadowColor = COLORS.median.stroke;
+    ctx.shadowBlur = 8;
+
+    ctx.beginPath();
+    for (let y = 0; y <= maxYear && y < yearly.length; y++) {
+      const x = xScale(y);
+      const val = yScale(yearly[y].median);
+      if (y === 0) ctx.moveTo(x, val);
+      else ctx.lineTo(x, val);
+    }
+
+    if (fractional > 0 && maxYear + 1 < yearly.length) {
+      const y0 = yearly[maxYear].median;
+      const y1 = yearly[maxYear + 1].median;
+      const interp = y0 + (y1 - y0) * fractional;
+      ctx.lineTo(xScale(maxYear + fractional), yScale(interp));
+    }
+
+    ctx.stroke();
+    ctx.shadowBlur = 0;
+
+    // Draw dot at the end
+    const endYear = Math.min(maxYear, yearly.length - 1);
+    let dotX, dotY;
+    if (fractional > 0 && maxYear + 1 < yearly.length) {
+      const y0 = yearly[maxYear].median;
+      const y1 = yearly[maxYear + 1].median;
+      dotX = xScale(maxYear + fractional);
+      dotY = yScale(y0 + (y1 - y0) * fractional);
+    } else {
+      dotX = xScale(endYear);
+      dotY = yScale(yearly[endYear].median);
+    }
+
+    ctx.fillStyle = COLORS.median.stroke;
+    ctx.shadowColor = COLORS.median.stroke;
+    ctx.shadowBlur = 12;
+    ctx.beginPath();
+    ctx.arc(dotX, dotY, 4, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.shadowBlur = 0;
+  }
+
+  function drawBaselineLine(ctx, yearly, years, xScale, yScale, progress) {
+    const maxYear = Math.floor(years * progress);
+    const fractional = (years * progress) - maxYear;
+
+    ctx.strokeStyle = COLORS.baseline.stroke;
+    ctx.lineWidth = COLORS.baseline.width;
+    ctx.setLineDash(COLORS.baseline.dash);
+    ctx.lineJoin = 'round';
+
+    ctx.beginPath();
+    for (let y = 0; y <= maxYear && y < yearly.length; y++) {
+      const x = xScale(y);
+      const val = yScale(yearly[y].median);
+      if (y === 0) ctx.moveTo(x, val);
+      else ctx.lineTo(x, val);
+    }
+
+    if (fractional > 0 && maxYear + 1 < yearly.length) {
+      const y0 = yearly[maxYear].median;
+      const y1 = yearly[maxYear + 1].median;
+      const interp = y0 + (y1 - y0) * fractional;
+      ctx.lineTo(xScale(maxYear + fractional), yScale(interp));
+    }
+
+    ctx.stroke();
+    ctx.setLineDash([]);
+  }
+
+  function drawZeroLine(ctx, yMin, yMax, xScale, yScale, years, plotW) {
+    if (yMin < 0 && yMax > 0) {
+      const y = yScale(0);
+      ctx.strokeStyle = COLORS.zero;
+      ctx.lineWidth = 1;
+      ctx.setLineDash([4, 4]);
+      ctx.beginPath();
+      ctx.moveTo(PADDING.left, y);
+      ctx.lineTo(PADDING.left + plotW, y);
+      ctx.stroke();
+      ctx.setLineDash([]);
+
+      // Label
+      ctx.fillStyle = 'rgba(255, 107, 107, 0.5)';
+      ctx.font = '10px Inter, sans-serif';
+      ctx.textAlign = 'right';
+      ctx.textBaseline = 'bottom';
+      ctx.fillText('₹0 (Broke)', PADDING.left + plotW, y - 4);
+    }
+  }
+
+  function drawAxes(ctx, w, h, plotW, plotH, years, yMin, yMax, xScale, yScale) {
+    ctx.fillStyle = COLORS.text;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'top';
+    ctx.font = '11px Inter, sans-serif';
+
+    // X axis labels
+    for (let yr = 0; yr <= years; yr++) {
+      const x = xScale(yr);
+      const label = yr === 0 ? 'Now' : `Y${yr}`;
+      ctx.fillText(label, x, PADDING.top + plotH + 12);
+    }
+
+    // X axis title
+    ctx.font = '11px Inter, sans-serif';
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.3)';
+    ctx.fillText('Years', PADDING.left + plotW / 2, PADDING.top + plotH + 32);
+
+    // Y axis labels
+    ctx.textAlign = 'right';
+    ctx.textBaseline = 'middle';
+    ctx.fillStyle = COLORS.text;
+    ctx.font = '11px JetBrains Mono, monospace';
+
+    const yTicks = niceScale(yMin, yMax, 5);
+    for (const val of yTicks) {
+      const y = yScale(val);
+      ctx.fillText(formatCurrency(val, true), PADDING.left - 10, y);
+    }
+  }
+
+  function niceScale(min, max, targetTicks) {
+    const range = max - min;
+    const roughStep = range / targetTicks;
+    const magnitude = Math.pow(10, Math.floor(Math.log10(roughStep)));
+    const residual = roughStep / magnitude;
+
+    let niceStep;
+    if (residual <= 1.5) niceStep = magnitude;
+    else if (residual <= 3) niceStep = 2 * magnitude;
+    else if (residual <= 7) niceStep = 5 * magnitude;
+    else niceStep = 10 * magnitude;
+
+    const start = Math.ceil(min / niceStep) * niceStep;
+    const ticks = [];
+    for (let val = start; val <= max; val += niceStep) {
+      ticks.push(val);
+    }
+    return ticks;
+  }
+
+  function formatCurrency(value, short = false) {
+    const abs = Math.abs(value);
+    const sign = value < 0 ? '-' : '';
+
+    if (short) {
+      if (abs >= 1e7) return sign + '₹' + (abs / 1e7).toFixed(1) + 'Cr';
+      if (abs >= 1e5) return sign + '₹' + (abs / 1e5).toFixed(1) + 'L';
+      if (abs >= 1e3) return sign + '₹' + (abs / 1e3).toFixed(0) + 'K';
+      return sign + '₹' + abs.toFixed(0);
+    }
+
+    return sign + '₹' + abs.toLocaleString('en-IN', { maximumFractionDigits: 0 });
+  }
+
+  /** Handle window resize */
+  function handleResize(canvas, results, baselineResults) {
+    render(canvas, results, baselineResults, false);
+  }
+
+  return { render, handleResize, formatCurrency };
+})();
