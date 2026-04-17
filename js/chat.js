@@ -668,12 +668,420 @@ const ChatEngine = (() => {
     return unique.slice(0, count);
   }
 
+  function localEscapeHtml(text) {
+    return String(text ?? '')
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;');
+  }
+
+  function formatPercent(value, digits = 1) {
+    return `${Number(value || 0).toFixed(digits)}%`;
+  }
+
+  function getLocalProfileMetrics(profile) {
+    if (!profile) return null;
+
+    const annualExpenses = (profile.monthlyExpenses || 0) * 12;
+    const taxRate = profile.taxRate || 0;
+    const monthlyNetIncome = (profile.salary || 0) * (1 - taxRate) / 12;
+    const monthlySurplus = monthlyNetIncome - (profile.monthlyExpenses || 0);
+    const savingsRate = profile.salary > 0
+      ? ((profile.salary - annualExpenses) / profile.salary) * 100
+      : 0;
+    const emergencyMonths = profile.monthlyExpenses > 0
+      ? (profile.savings || 0) / profile.monthlyExpenses
+      : 0;
+    const expenseRatio = profile.salary > 0
+      ? ((profile.monthlyExpenses || 0) / (profile.salary / 12)) * 100
+      : 0;
+
+    return {
+      annualExpenses,
+      monthlyNetIncome,
+      monthlySurplus,
+      savingsRate,
+      emergencyMonths,
+      expenseRatio
+    };
+  }
+
+  function getTopLocalInsight(behavioralReport) {
+    if (!behavioralReport?.insights?.length) return null;
+
+    const score = { critical: 3, warning: 2, info: 1 };
+    const ranked = [...behavioralReport.insights].sort((a, b) => {
+      const severityDiff = (score[b.severity] || 0) - (score[a.severity] || 0);
+      if (severityDiff !== 0) return severityDiff;
+      return Number(Boolean(b.recommendation)) - Number(Boolean(a.recommendation));
+    });
+
+    return ranked[0] || null;
+  }
+
+  function estimateHouseBudget(profile) {
+    if (!profile?.salary) return null;
+
+    const monthlyNet = (profile.salary * (1 - (profile.taxRate || 0))) / 12;
+    const affordableEmi = monthlyNet * 0.30;
+    const annualRate = 8.5;
+    const tenureYears = 20;
+    const monthlyRate = (annualRate / 100) / 12;
+    const totalMonths = tenureYears * 12;
+
+    if (affordableEmi <= 0 || monthlyRate <= 0) return null;
+
+    const factor = Math.pow(1 + monthlyRate, totalMonths);
+    const loanAmount = affordableEmi * (factor - 1) / (monthlyRate * factor);
+
+    return {
+      affordableEmi,
+      propertyBudget: loanAmount / 0.80
+    };
+  }
+
+  function buildLocalHelpResponse(hasResults) {
+    return [
+      '<p>I can answer local questions even without a live model.</p>',
+      '<ul>',
+      '<li>"How am I doing overall?"</li>',
+      '<li>"What should I improve first?"</li>',
+      '<li>"What does goal probability mean?"</li>',
+      '<li>"Am I saving enough?"</li>',
+      '<li>"Can I afford a house?"</li>',
+      '<li>"Explain the chart / ruin probability / median outcome"</li>',
+      '</ul>',
+      hasResults
+        ? '<p>I will use your latest simulation context for the answer.</p>'
+        : '<p>I will use the current input values in the form when there is no saved simulation yet.</p>'
+    ].join('');
+  }
+
+  function buildLocalStatusResponse(profile, results, baselineResults, behavioralReport, scenario) {
+    const s = results?.stats;
+    if (!s) return getUnknownIntentResponse();
+
+    const b = baselineResults?.stats || s;
+    const metrics = getLocalProfileMetrics(profile);
+    const topInsight = getTopLocalInsight(behavioralReport);
+    let lead = 'Your plan looks mixed right now. There is some growth potential, but a few weak spots are holding it back.';
+
+    if (s.goalProbability >= 75 && s.ruinProbability <= 10) {
+      lead = 'Your current plan looks fairly healthy. The downside risk is contained and goal odds are decent.';
+    } else if (s.goalProbability < 40 || s.ruinProbability > 20) {
+      lead = 'Your plan looks financially tight right now. Cash-flow resilience is the main weakness.';
+    }
+
+    const comparison = scenario?.id && scenario.id !== 'baseline'
+      ? `<p class="chat-comparison">Compared to baseline: ${s.final.median >= b.final.median ? '+' : '-'}${formatINRShort(Math.abs(s.final.median - b.final.median))}</p>`
+      : '';
+
+    return [
+      '<div class="chat-section">',
+      '<div class="chat-section__header"><span class="chat-section__icon">OVR</span> Overall View</div>',
+      `<p>${localEscapeHtml(lead)}</p>`,
+      '<div class="chat-outcomes">',
+      `<div class="chat-outcome"><span class="chat-outcome__label">Median</span><span class="chat-outcome__value chat-outcome__value--gold">${formatINRShort(s.final.median)}</span></div>`,
+      `<div class="chat-outcome"><span class="chat-outcome__label">Goal Odds</span><span class="chat-outcome__value ${s.goalProbability >= 50 ? 'chat-outcome__value--teal' : 'chat-outcome__value--coral'}">${formatPercent(s.goalProbability)}</span></div>`,
+      `<div class="chat-outcome"><span class="chat-outcome__label">Ruin Risk</span><span class="chat-outcome__value ${s.ruinProbability <= 10 ? 'chat-outcome__value--teal' : 'chat-outcome__value--coral'}">${formatPercent(s.ruinProbability)}</span></div>`,
+      `<div class="chat-outcome"><span class="chat-outcome__label">Emergency Fund</span><span class="chat-outcome__value ${metrics && metrics.emergencyMonths >= 6 ? 'chat-outcome__value--teal' : 'chat-outcome__value--coral'}">${metrics ? metrics.emergencyMonths.toFixed(1) : '0.0'} mo</span></div>`,
+      '</div>',
+      comparison,
+      topInsight ? `<p>Main issue: <strong>${localEscapeHtml(topInsight.title)}</strong>. ${localEscapeHtml(topInsight.message)}</p>` : '',
+      '</div>'
+    ].join('');
+  }
+
+  function buildLocalAdviceResponse(profile, results, behavioralReport) {
+    const s = results?.stats;
+    const metrics = getLocalProfileMetrics(profile);
+    const actions = [];
+
+    if (metrics && metrics.emergencyMonths < 6) {
+      actions.push(`Build emergency liquidity to at least 6 months. You are currently at ${metrics.emergencyMonths.toFixed(1)} months.`);
+    }
+    if (metrics && metrics.savingsRate < 20) {
+      actions.push(`Raise your savings rate toward 20%+. Right now it is about ${metrics.savingsRate.toFixed(1)}%.`);
+    }
+    if (metrics && metrics.expenseRatio > 60) {
+      actions.push(`Lower fixed spending. Roughly ${metrics.expenseRatio.toFixed(0)}% of gross income is already going to expenses.`);
+    }
+    if (s && s.goalProbability < 50) {
+      actions.push('Improve goal odds by increasing investable surplus, extending the timeline, or reducing the target.');
+    }
+    if (s && s.ruinProbability > 10) {
+      actions.push('Prioritize resilience before taking more risk. Cash runway is a better lever than chasing returns here.');
+    }
+
+    const recommendations = behavioralReport?.insights
+      ?.filter(insight => insight.recommendation)
+      .slice(0, 2)
+      .map(insight => insight.recommendation) || [];
+
+    recommendations.forEach((item) => {
+      if (!actions.includes(item)) actions.push(item);
+    });
+
+    const finalActions = actions.slice(0, 4);
+
+    if (!finalActions.length) {
+      finalActions.push('Keep your current trajectory steady and review major expenses before taking on new commitments.');
+      finalActions.push('Use scenario testing for large decisions like a house purchase, job switch, or higher-risk investing.');
+    }
+
+    return [
+      '<div class="chat-section">',
+      '<div class="chat-section__header"><span class="chat-section__icon">ADV</span> What To Improve</div>',
+      '<ul>',
+      finalActions.map(action => `<li>${localEscapeHtml(action)}</li>`).join(''),
+      '</ul>',
+      '</div>'
+    ].join('');
+  }
+
+  function buildLocalGoalResponse(results) {
+    const s = results?.stats;
+    if (!s || !s.goalAmount) {
+      return '<p>You have not set a target corpus yet. Add a goal amount in the form and I can judge the probability of reaching it.</p>';
+    }
+
+    let guidance = 'The goal is possible, but not comfortable. Small improvements in savings rate or timeline would help.';
+    if (s.goalProbability >= 75) {
+      guidance = 'You are broadly on track for the current target if your saving discipline holds.';
+    } else if (s.goalProbability < 40) {
+      guidance = 'The current path makes the goal a stretch. Income, savings rate, or the timeline likely need to change.';
+    }
+
+    return [
+      '<div class="chat-section">',
+      '<div class="chat-section__header"><span class="chat-section__icon">GOAL</span> Goal Feasibility</div>',
+      `<p>Your current target is ${formatINRShort(s.goalAmount)}. The simulation puts the success probability at <strong>${formatPercent(s.goalProbability)}</strong>.</p>`,
+      `<p>${localEscapeHtml(guidance)}</p>`,
+      `<p>Median 10-year wealth is ${formatINRShort(s.final.median)}, with a downside case near ${formatINRShort(s.final.p5)}.</p>`,
+      '</div>'
+    ].join('');
+  }
+
+  function buildLocalRuinResponse(results) {
+    const s = results?.stats;
+    if (!s) return '<p>Ruin probability is the chance that savings hit zero or below at any point in the simulation horizon.</p>';
+
+    let interpretation = 'That is a meaningful risk level and worth addressing before taking on more commitments.';
+    if (s.ruinProbability <= 5) {
+      interpretation = 'That is a relatively contained downside risk.';
+    } else if (s.ruinProbability > 20) {
+      interpretation = 'That is a high failure risk. Cash-flow resilience is the main problem, not just portfolio choice.';
+    }
+
+    return [
+      '<div class="chat-section">',
+      '<div class="chat-section__header"><span class="chat-section__icon">RISK</span> Ruin Probability</div>',
+      `<p>Ruin probability means the chance that your savings go to zero or below at any point during the simulation horizon.</p>`,
+      `<p>Your current estimate is <strong>${formatPercent(s.ruinProbability)}</strong>${s.ruinWithin3Prob > 0 ? `, with ${formatPercent(s.ruinWithin3Prob)} happening in the first 3 years` : ''}. ${localEscapeHtml(interpretation)}</p>`,
+      '</div>'
+    ].join('');
+  }
+
+  function buildLocalSavingsResponse(profile, behavioralReport) {
+    const metrics = getLocalProfileMetrics(profile);
+    if (!metrics) return '<p>I need your salary and monthly expenses to estimate your savings capacity.</p>';
+
+    const monthlySurplusLabel = `${metrics.monthlySurplus >= 0 ? '' : '-'}${formatINRShort(Math.abs(metrics.monthlySurplus))}`;
+    let interpretation = 'That is usable, but there is room to improve if your goals are ambitious.';
+
+    if (metrics.savingsRate >= 20) {
+      interpretation = 'That is a healthy base for long-term wealth building.';
+    } else if (metrics.savingsRate < 10) {
+      interpretation = 'That is too thin for most long-term goals and leaves little room for shocks.';
+    }
+
+    const recommendation = behavioralReport?.insights?.find(insight =>
+      ['good_savings', 'low_savings', 'very_low_savings', 'negative_savings'].includes(insight.id)
+    );
+
+    return [
+      '<div class="chat-section">',
+      '<div class="chat-section__header"><span class="chat-section__icon">SAVE</span> Savings Capacity</div>',
+      `<p>Your current savings rate is about <strong>${formatPercent(metrics.savingsRate)}</strong>.</p>`,
+      `<p>After tax and current expenses, you have roughly <strong>${monthlySurplusLabel}/month</strong> of free cash flow before extra investing changes. ${localEscapeHtml(interpretation)}</p>`,
+      recommendation?.recommendation ? `<p>${localEscapeHtml(recommendation.recommendation)}</p>` : '',
+      '</div>'
+    ].join('');
+  }
+
+  function buildLocalEmergencyResponse(profile) {
+    const metrics = getLocalProfileMetrics(profile);
+    if (!metrics) return '<p>I need your savings and monthly expenses to estimate your emergency fund runway.</p>';
+
+    let guidance = 'That is workable, but still thinner than ideal.';
+    if (metrics.emergencyMonths >= 6) {
+      guidance = 'That is a solid buffer for most people.';
+    } else if (metrics.emergencyMonths < 3) {
+      guidance = 'That is a fragile buffer. One income shock could force debt or asset liquidation.';
+    }
+
+    return [
+      '<div class="chat-section">',
+      '<div class="chat-section__header"><span class="chat-section__icon">CASH</span> Emergency Fund</div>',
+      `<p>Your liquid savings cover about <strong>${metrics.emergencyMonths.toFixed(1)} months</strong> of current expenses.</p>`,
+      `<p>${localEscapeHtml(guidance)} A common benchmark is 6 months before taking on major risk.</p>`,
+      '</div>'
+    ].join('');
+  }
+
+  function buildLocalExpenseResponse(profile) {
+    const metrics = getLocalProfileMetrics(profile);
+    if (!metrics) return '<p>I need your salary and expenses to judge whether spending is too high.</p>';
+
+    let guidance = 'Spending is starting to crowd out saving capacity.';
+    if (metrics.expenseRatio <= 50) {
+      guidance = 'Your spending load is fairly manageable.';
+    } else if (metrics.expenseRatio > 70) {
+      guidance = 'Spending is the main pressure point in your plan right now.';
+    }
+
+    return [
+      '<div class="chat-section">',
+      '<div class="chat-section__header"><span class="chat-section__icon">EXP</span> Spending Check</div>',
+      `<p>Your monthly expense ratio is about <strong>${formatPercent(metrics.expenseRatio, 0)}</strong> of gross monthly income.</p>`,
+      `<p>${localEscapeHtml(guidance)} Bringing that closer to 50-60% would improve flexibility.</p>`,
+      '</div>'
+    ].join('');
+  }
+
+  function buildLocalHouseResponse(profile) {
+    const budget = estimateHouseBudget(profile);
+    if (!budget) return '<p>I need your salary, tax rate, and current expenses to estimate an affordable home budget.</p>';
+
+    return [
+      '<div class="chat-section">',
+      '<div class="chat-section__header"><span class="chat-section__icon">HOME</span> House Affordability</div>',
+      `<p>A reasonable starting EMI is about <strong>${formatINRShort(budget.affordableEmi)}/month</strong>, assuming home costs stay near 30% of net monthly income.</p>`,
+      `<p>At roughly 8.5% for 20 years, that points to a home budget around <strong>${formatINRShort(budget.propertyBudget)}</strong> with a 20% down payment.</p>`,
+      `<p>This is only a first-pass affordability number. Existing debt, emergency fund strength, and other goals still matter.</p>`,
+      '</div>'
+    ].join('');
+  }
+
+  function buildLocalMetricExplanation(message, results, behavioralReport) {
+    const clean = message.toLowerCase();
+    const s = results?.stats;
+
+    if (/(goal probability|chance of reaching|probability of reaching)/i.test(clean)) {
+      return buildLocalGoalResponse(results);
+    }
+
+    if (/(ruin probability|run out of money|going broke|what does ruin mean)/i.test(clean)) {
+      return buildLocalRuinResponse(results);
+    }
+
+    if (/(median|p50|most likely)/i.test(clean)) {
+      return `<p>The median, or P50, is the middle outcome across all simulations. Half of simulated paths finish above it and half finish below it. In your current case, that median is ${s ? `<strong>${formatINRShort(s.final.median)}</strong>` : 'the central outcome'}.</p>`;
+    }
+
+    if (/(best case|worst case|p95|p5|percentile)/i.test(clean)) {
+      if (!s) {
+        return '<p>P95 is the optimistic top 5% outcome, and P5 is the stressed bottom 5% outcome. They show the spread around the plan rather than a guarantee.</p>';
+      }
+      return `<p>P95 is your optimistic tail at <strong>${formatINRShort(s.final.p95)}</strong>, while P5 is the stressed tail at <strong>${formatINRShort(s.final.p5)}</strong>. The wider the gap, the less predictable the plan.</p>`;
+    }
+
+    if (/(health score|financial health)/i.test(clean)) {
+      if (!behavioralReport) {
+        return '<p>The financial health score is a local score based on savings rate, emergency fund, expense ratio, goal feasibility, and downside risks.</p>';
+      }
+      return `<p>Your current health score is <strong>${behavioralReport.healthScore}/100</strong>. It is a local composite score based on savings rate, emergency buffer, expense load, and goal feasibility.</p>`;
+    }
+
+    return null;
+  }
+
+  function buildLocalChartResponse(results) {
+    const s = results?.stats;
+    if (!s) return '<p>The fan chart shows a range of simulated wealth paths, with darker middle bands representing more likely outcomes.</p>';
+
+    return [
+      '<div class="chat-section">',
+      '<div class="chat-section__header"><span class="chat-section__icon">CHRT</span> Chart Meaning</div>',
+      '<p>The fan chart is showing uncertainty, not one forecast. The middle line is the median path, and the outer bands show downside and upside tails.</p>',
+      `<p>For your current numbers, the 10-year spread runs from about ${formatINRShort(s.final.p5)} in the stressed tail to ${formatINRShort(s.final.p95)} in the optimistic tail.</p>`,
+      '</div>'
+    ].join('');
+  }
+
+  function generateGeneralResponse(message, context = {}) {
+    const clean = String(message || '').trim().toLowerCase();
+    const profile = context.profile || null;
+    const results = context.results || null;
+    const baselineResults = context.baselineResults || results;
+    const behavioralReport = context.behavioralReport || null;
+    const scenario = context.scenario || { id: 'baseline', name: 'Current Scenario' };
+    const hasResults = Boolean(results?.stats);
+
+    if (!clean) {
+      return buildLocalHelpResponse(hasResults);
+    }
+
+    if (/^(hi|hello|hey|help)\b|what can you do|how can you help/i.test(clean)) {
+      return buildLocalHelpResponse(hasResults);
+    }
+
+    const metricExplanation = buildLocalMetricExplanation(clean, results, behavioralReport);
+    if (metricExplanation) {
+      return metricExplanation;
+    }
+
+    if (/(how am i doing|am i on track|where do i stand|overall|summary|review my finances|assess my plan|status)/i.test(clean)) {
+      return buildLocalStatusResponse(profile, results, baselineResults, behavioralReport, scenario);
+    }
+
+    if (/(what should i do|what should i improve|how can i improve|next step|recommend|advice|what do you suggest|optimize)/i.test(clean)) {
+      return buildLocalAdviceResponse(profile, results, behavioralReport);
+    }
+
+    if (/(goal|target|can i reach|will i reach)/i.test(clean)) {
+      return buildLocalGoalResponse(results);
+    }
+
+    if (/(emergency fund|runway|buffer)/i.test(clean)) {
+      return buildLocalEmergencyResponse(profile);
+    }
+
+    if (/(savings rate|save enough|saving enough|monthly save|surplus|free cash flow)/i.test(clean)) {
+      return buildLocalSavingsResponse(profile, behavioralReport);
+    }
+
+    if (/(expense ratio|spending too much|expenses too high|cut expenses|reduce spending)/i.test(clean)) {
+      return buildLocalExpenseResponse(profile);
+    }
+
+    if (/(afford.*house|afford.*home|home budget|house budget|buy a house|buying a house)/i.test(clean)) {
+      return buildLocalHouseResponse(profile);
+    }
+
+    if (/(chart|graph|fan chart|visualization)/i.test(clean)) {
+      return buildLocalChartResponse(results);
+    }
+
+    if (hasResults) {
+      return [
+        buildLocalStatusResponse(profile, results, baselineResults, behavioralReport, scenario),
+        buildLocalAdviceResponse(profile, results, behavioralReport)
+      ].join('');
+    }
+
+    return buildLocalHelpResponse(false);
+  }
+
   return {
     detectIntent,
     buildScenarioFromIntent,
     buildClonedScenario,
     buildAiContext,
     generateChatResponse,
+    generateGeneralResponse,
     getUnknownIntentResponse,
     getRandomPrompts,
     getContextualPrompts,

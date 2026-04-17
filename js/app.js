@@ -1054,16 +1054,38 @@ const App = (() => {
     }
   }
 
+  function buildOpenChatLocalContext() {
+    const profile = state.profile || getProfile();
+    const scenario = state.activeScenarioConfig || getScenario();
+    const baselineResults = state.baselineResults || SimulationEngine.simulate(profile, Scenarios.baseline, { years: 10, runs: 800 });
+    const scenarioResults = state.scenarioResults || (
+      scenario.id === 'baseline'
+        ? baselineResults
+        : SimulationEngine.simulate(profile, scenario, { years: 10, runs: 800 })
+    );
+    const behavioralReport = state.behavioralReport || BehavioralEngine.analyze(
+      profile,
+      scenarioResults,
+      baselineResults,
+      scenario
+    );
+
+    return {
+      profile,
+      scenario,
+      results: scenarioResults,
+      baselineResults,
+      behavioralReport,
+      memory: state.chatMemory
+    };
+  }
+
   async function resolveOpenChatResponse(message) {
     if (typeof ChatApi !== 'undefined' && ChatApi.canUseRemote()) {
       return ChatApi.generateReply(buildRemoteChatContext(message));
     }
 
-    if (typeof ChatApi !== 'undefined' && ChatApi.hasApiKey()) {
-      return ChatApi.getSetupHintHtml();
-    }
-
-    return ChatEngine.getUnknownIntentResponse();
+    return ChatEngine.generateGeneralResponse(message, buildOpenChatLocalContext());
   }
 
   async function handleChatSend() {
