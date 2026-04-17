@@ -2,7 +2,8 @@
 
 finTWIN is a high-fidelity, client-side **Monte Carlo Financial Simulator** designed to model long-term wealth trajectories under various life and investing scenarios. It combines rigorous stochastic modeling with a natural-language **AI Planning Layer**, allowing users to explore their financial future through conversational "what-if" analysis.
 
-![finTWIN Dashboard](https://github.com/sabeeh/finTWIN/raw/main/screenshot.png) *(Note: Placeholder for actual screenshot)*
+![finTWIN Dashboard](./screenshot.png)
+*(Note: Placeholder for actual screenshot)*
 
 ## 🚀 Key Features
 
