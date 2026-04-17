@@ -258,7 +258,7 @@
         <span class="chat-panel__avatar">🧠</span>
         <div>
           <div class="chat-panel__title">FinSim AI</div>
-          <div class="chat-panel__status">Ask me anything about your finances</div>
+          <div class="chat-panel__status" id="chat-status" data-mode="local">Ask me anything about your finances</div>
         </div>
       </div>
       <button class="chat-panel__close" id="chat-close" title="Close">✕</button>
@@ -292,12 +292,15 @@
   </div>
 
   <!-- Scripts (order matters) -->
+  <script src="js/config.js"></script>
+  <script src="js/config.local.js"></script>
   <script src="js/simulation.js"></script>
   <script src="js/scenarios.js"></script>
   <script src="js/charts.js"></script>
   <script src="js/behavioral.js"></script>
   <script src="js/narrative.js"></script>
   <script src="js/chat.js"></script>
+  <script src="js/chat-api.js"></script>
   <script src="js/app.js"></script>
 </body>
 </html>

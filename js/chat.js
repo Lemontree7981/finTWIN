@@ -469,6 +469,70 @@ const ChatEngine = (() => {
     return sign + '₹' + abs.toFixed(0);
   }
 
+  function getUnknownIntentResponse() {
+    return `<p>I couldn't parse a specific financial scenario from your question. Try asking something like:</p>
+      <ul>
+        <li>"What if I get a 30% raise?"</li>
+        <li>"What if I start a business?"</li>
+        <li>"What if my expenses become â‚¹50,000/month?"</li>
+        <li>"Can I save â‚¹1 crore in 10 years?"</li>
+      </ul>
+      <p>I work best with clear financial what-if scenarios.</p>`;
+  }
+
+  function buildAiContext(intent, results, baselineResults, profile, scenario, behavioralReport) {
+    const scenarioStats = results?.stats;
+    const baselineStats = baselineResults?.stats;
+
+    return {
+      intent: intent ? {
+        name: intent.intent,
+        originalQuery: intent.originalQuery,
+        assumptions: intent.assumptions || [],
+        parameters: intent.params || {}
+      } : null,
+      profile: profile ? {
+        age: profile.age,
+        salary: profile.salary,
+        savings: profile.savings,
+        monthlyExpenses: profile.monthlyExpenses,
+        goalAmount: profile.goalAmount
+      } : null,
+      scenario: scenario ? {
+        id: scenario.id,
+        name: scenario.name,
+        riskLevel: scenario.riskLevel || 'baseline'
+      } : null,
+      simulation: scenarioStats ? {
+        years: results.years,
+        medianFinalWealth: scenarioStats.final.median,
+        bestCaseFinalWealth: scenarioStats.final.p95,
+        worstCaseFinalWealth: scenarioStats.final.p5,
+        meanFinalWealth: scenarioStats.final.mean,
+        goalProbability: scenarioStats.goalProbability,
+        ruinProbability: scenarioStats.ruinProbability,
+        ruinWithin3YearsProbability: scenarioStats.ruinWithin3Prob
+      } : null,
+      baselineComparison: baselineStats ? {
+        medianFinalWealth: baselineStats.final.median,
+        goalProbability: baselineStats.goalProbability,
+        ruinProbability: baselineStats.ruinProbability
+      } : null,
+      behavioral: behavioralReport ? {
+        healthScore: behavioralReport.healthScore,
+        savingsRate: behavioralReport.savingsRate,
+        emergencyMonths: behavioralReport.emergencyMonths,
+        expenseRatio: behavioralReport.expenseRatio,
+        keyInsights: (behavioralReport.insights || []).slice(0, 3).map((insight) => ({
+          title: insight.title,
+          severity: insight.severity,
+          message: insight.message,
+          recommendation: insight.recommendation || ''
+        }))
+      } : null
+    };
+  }
+
   // --- Suggested Prompts ---
   const SUGGESTED_PROMPTS = [
     'What if I get a 50% raise?',
@@ -489,7 +553,9 @@ const ChatEngine = (() => {
   return {
     detectIntent,
     buildScenarioFromIntent,
+    buildAiContext,
     generateChatResponse,
+    getUnknownIntentResponse,
     getRandomPrompts,
     formatINRShort,
     SUGGESTED_PROMPTS

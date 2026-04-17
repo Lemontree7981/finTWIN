@@ -33,4 +33,13 @@ Then open `http://localhost:8000`.
 
 ## GitHub Ready
 
-This version is fully client-side and does not include API keys, backend services, or external secret configuration.
+This version is still fully client-side, but the chat now supports an optional local config file:
+
+- `js/config.js` holds the committed defaults
+- `js/config.local.js` can hold your local API key and provider settings
+
+Important:
+
+- `js/config.local.js` is ignored by git
+- Because this app runs in the browser, any key placed there is still visible to anyone who can open the app source
+- If your provider blocks browser-side requests or you need stronger key protection, use a backend proxy instead

@@ -1094,6 +1094,14 @@ body::after {
   color: var(--text-muted);
 }
 
+.chat-panel__status[data-mode="live"] {
+  color: var(--teal);
+}
+
+.chat-panel__status[data-mode="setup"] {
+  color: var(--gold);
+}
+
 .chat-panel__close {
   width: 32px;
   height: 32px;
@@ -1387,6 +1395,13 @@ body::after {
 .chat-panel__send:hover {
   box-shadow: 0 0 16px var(--teal-glow);
   transform: scale(1.05);
+}
+
+.chat-panel__send:disabled {
+  opacity: 0.6;
+  cursor: wait;
+  transform: none;
+  box-shadow: none;
 }
 
 /* ---- Typing Indicator ---- */

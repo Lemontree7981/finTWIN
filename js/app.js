@@ -1,6 +1,6 @@
 /**
- * App Controller — AI Financial Digital Twin
- * Wires DOM events, manages state, orchestrates simulation → behavioral → render → narrative → chat
+ * App Controller â€” AI Financial Digital Twin
+ * Wires DOM events, manages state, orchestrates simulation â†’ behavioral â†’ render â†’ narrative â†’ chat
  */
 
 const App = (() => {
@@ -12,7 +12,8 @@ const App = (() => {
     scenarioResults: null,
     behavioralReport: null,
     isRunning: false,
-    chatOpen: false
+    chatOpen: false,
+    chatBusy: false
   };
 
   // --- DOM References ---
@@ -77,6 +78,7 @@ const App = (() => {
     DOM.chatInput = document.getElementById('chat-input');
     DOM.chatSend = document.getElementById('chat-send');
     DOM.chatPrompts = document.getElementById('chat-prompts');
+    DOM.chatStatus = document.getElementById('chat-status');
   }
 
   function bindEvents() {
@@ -107,7 +109,7 @@ const App = (() => {
       if (e.key === 'Enter') handleChatSend();
     });
 
-    // Window resize — re-render chart
+    // Window resize â€” re-render chart
     let resizeTimer;
     window.addEventListener('resize', () => {
       clearTimeout(resizeTimer);
@@ -380,7 +382,7 @@ const App = (() => {
       DOM.compScenario.innerHTML = rows.map(row => {
         const diff = s.final[row.key] - b.final[row.key];
         const colorClass = diff > 0 ? 'positive' : diff < 0 ? 'negative' : 'neutral';
-        const arrow = diff > 0 ? '↑' : diff < 0 ? '↓' : '→';
+        const arrow = diff > 0 ? '+' : diff < 0 ? '-' : '=';
         return `
           <div class="comparison-row">
             <span class="comparison-row__label">${row.label}</span>
@@ -402,6 +404,7 @@ const App = (() => {
   // ===================================================
   function initChat() {
     renderSuggestedPrompts();
+    updateChatStatus();
   }
 
   function toggleChat() {
@@ -441,94 +444,219 @@ const App = (() => {
     }
   }
 
-  function handleChatSend() {
-    const message = DOM.chatInput.value.trim();
-    if (!message || state.isRunning) return;
+  function updateChatStatus() {
+    if (!DOM.chatStatus) return;
 
-    // Add user message
-    addChatMessage(message, 'user');
-    DOM.chatInput.value = '';
-
-    // Show typing indicator
-    const typingId = addTypingIndicator();
-
-    // Detect intent
-    const intent = ChatEngine.detectIntent(message);
-
-    if (!intent.matched) {
-      // Unknown intent
-      setTimeout(() => {
-        removeTypingIndicator(typingId);
-        addChatMessage(
-          `<p>I couldn't parse a specific financial scenario from your question. Try asking something like:</p>
-          <ul>
-            <li>"What if I get a 30% raise?"</li>
-            <li>"What if I start a business?"</li>
-            <li>"What if my expenses become ₹50,000/month?"</li>
-            <li>"Can I save ₹1 crore in 10 years?"</li>
-          </ul>
-          <p>I work best with clear financial what-if scenarios.</p>`,
-          'ai'
-        );
-        renderSuggestedPrompts();
-      }, 600);
+    if (typeof ChatApi === 'undefined') {
+      DOM.chatStatus.textContent = 'Local simulator mode';
+      DOM.chatStatus.dataset.mode = 'local';
       return;
     }
 
-    // Build scenario from intent
+    DOM.chatStatus.textContent = ChatApi.getStatusText();
+    DOM.chatStatus.dataset.mode = ChatApi.getMode();
+  }
+
+  function setChatBusy(isBusy) {
+    state.chatBusy = isBusy;
+
+    if (DOM.chatInput) {
+      DOM.chatInput.disabled = isBusy;
+      if (!isBusy && state.chatOpen) DOM.chatInput.focus();
+    }
+
+    if (DOM.chatSend) {
+      DOM.chatSend.disabled = isBusy;
+    }
+  }
+
+  function wait(ms) {
+    return new Promise(resolve => setTimeout(resolve, ms));
+  }
+
+  function summarizeResults(results) {
+    if (!results?.stats) return null;
+
+    return {
+      years: results.years,
+      medianFinalWealth: results.stats.final.median,
+      bestCaseFinalWealth: results.stats.final.p95,
+      worstCaseFinalWealth: results.stats.final.p5,
+      goalProbability: results.stats.goalProbability,
+      ruinProbability: results.stats.ruinProbability
+    };
+  }
+
+  function summarizeBehavioralReport(behavioralReport) {
+    if (!behavioralReport) return null;
+
+    return {
+      healthScore: behavioralReport.healthScore,
+      savingsRate: behavioralReport.savingsRate,
+      emergencyMonths: behavioralReport.emergencyMonths,
+      expenseRatio: behavioralReport.expenseRatio,
+      keyInsights: (behavioralReport.insights || []).slice(0, 3).map((insight) => ({
+        title: insight.title,
+        severity: insight.severity,
+        message: insight.message
+      }))
+    };
+  }
+
+  function buildDashboardContext(activeScenario, overrideResults = null, overrideBaseline = null, overrideBehavioral = null) {
+    return {
+      selectedScenario: activeScenario,
+      latestResults: summarizeResults(overrideResults || state.scenarioResults),
+      baselineResults: summarizeResults(overrideBaseline || state.baselineResults),
+      behavioral: summarizeBehavioralReport(overrideBehavioral || state.behavioralReport)
+    };
+  }
+
+  function buildRemoteChatContext(message, chatRun = null) {
+    const scenario = chatRun?.scenarioResult?.scenario || getScenario();
+    const activeScenario = scenario ? { id: scenario.id, name: scenario.name } : null;
+
+    return {
+      message,
+      profile: chatRun?.chatProfile || state.profile || getProfile(),
+      activeScenario,
+      scenarioAnalysis: chatRun
+        ? ChatEngine.buildAiContext(
+          chatRun.intent,
+          chatRun.scenarioResults,
+          chatRun.baselineResults,
+          chatRun.chatProfile,
+          chatRun.scenarioResult.scenario,
+          chatRun.behavioralReport
+        )
+        : null,
+      latestDashboardState: buildDashboardContext(
+        activeScenario,
+        chatRun?.scenarioResults || null,
+        chatRun?.baselineResults || null,
+        chatRun?.behavioralReport || null
+      )
+    };
+  }
+
+  function runChatScenario(intent) {
     const profile = getProfile();
     const scenarioResult = ChatEngine.buildScenarioFromIntent(intent, profile);
     const chatProfile = { ...profile, ...scenarioResult.profileOverride };
 
-    // Add assumptions to intent for response generation
     intent.assumptions = scenarioResult.assumptions;
 
-    // Run simulation
-    setTimeout(() => {
-      try {
-        const simOptions = {
-          years: scenarioResult.simulationOverride?.years || 10,
-          runs: 1000
-        };
+    const simOptions = {
+      years: scenarioResult.simulationOverride?.years || 10,
+      runs: 1000
+    };
 
-        const baselineResults = SimulationEngine.simulate(chatProfile, Scenarios.baseline, simOptions);
-        const scenarioResults = SimulationEngine.simulate(chatProfile, scenarioResult.scenario, simOptions);
+    const baselineResults = SimulationEngine.simulate(chatProfile, Scenarios.baseline, simOptions);
+    const scenarioResults = SimulationEngine.simulate(chatProfile, scenarioResult.scenario, simOptions);
+    const behavioralReport = BehavioralEngine.analyze(
+      chatProfile, scenarioResults, baselineResults, scenarioResult.scenario
+    );
 
-        // Run behavioral analysis
-        const behavioralReport = BehavioralEngine.analyze(
-          chatProfile, scenarioResults, baselineResults, scenarioResult.scenario
-        );
+    return {
+      intent,
+      scenarioResult,
+      chatProfile,
+      baselineResults,
+      scenarioResults,
+      behavioralReport
+    };
+  }
 
-        // Generate chat response
-        const responseHtml = ChatEngine.generateChatResponse(
-          intent, scenarioResults, baselineResults, chatProfile, scenarioResult.scenario, behavioralReport
-        );
+  async function resolveMatchedChatResponse(message, chatRun) {
+    const localResponse = ChatEngine.generateChatResponse(
+      chatRun.intent,
+      chatRun.scenarioResults,
+      chatRun.baselineResults,
+      chatRun.chatProfile,
+      chatRun.scenarioResult.scenario,
+      chatRun.behavioralReport
+    );
+
+    if (typeof ChatApi === 'undefined' || !ChatApi.canUseRemote()) {
+      return localResponse;
+    }
+
+    try {
+      return await ChatApi.generateReply(buildRemoteChatContext(message, chatRun));
+    } catch (err) {
+      console.error('Live AI chat error:', err);
+      return localResponse;
+    }
+  }
+
+  async function resolveOpenChatResponse(message) {
+    if (typeof ChatApi !== 'undefined' && ChatApi.canUseRemote()) {
+      return ChatApi.generateReply(buildRemoteChatContext(message));
+    }
+
+    if (typeof ChatApi !== 'undefined' && ChatApi.hasApiKey()) {
+      return ChatApi.getSetupHintHtml();
+    }
+
+    return ChatEngine.getUnknownIntentResponse();
+  }
+
+  async function handleChatSend() {
+    const message = DOM.chatInput.value.trim();
+    if (!message || state.isRunning || state.chatBusy) return;
+
+    addChatMessage(message, 'user');
+    DOM.chatInput.value = '';
+    setChatBusy(true);
+
+    const typingId = addTypingIndicator();
+
+    try {
+      await wait(350);
+
+      const intent = ChatEngine.detectIntent(message);
+      let responseHtml;
+
+      if (intent.matched) {
+        const chatRun = runChatScenario(intent);
+        responseHtml = await resolveMatchedChatResponse(message, chatRun);
+
+        state.baselineResults = chatRun.baselineResults;
+        state.scenarioResults = chatRun.scenarioResults;
+        state.behavioralReport = chatRun.behavioralReport;
+        state.profile = chatRun.chatProfile;
 
         removeTypingIndicator(typingId);
         addChatMessage(responseHtml, 'ai');
-
-        // Also update main UI if user wants
-        state.baselineResults = baselineResults;
-        state.scenarioResults = scenarioResults;
-        state.behavioralReport = behavioralReport;
-        state.profile = chatProfile;
-
-        renderResults(scenarioResults, baselineResults, chatProfile, scenarioResult.scenario, behavioralReport);
-      } catch (err) {
-        console.error('Chat simulation error:', err);
+        renderResults(
+          chatRun.scenarioResults,
+          chatRun.baselineResults,
+          chatRun.chatProfile,
+          chatRun.scenarioResult.scenario,
+          chatRun.behavioralReport
+        );
+      } else {
+        responseHtml = await resolveOpenChatResponse(message);
         removeTypingIndicator(typingId);
-        addChatMessage(`<p>An error occurred during simulation: ${err.message}</p>`, 'ai');
+        addChatMessage(responseHtml, 'ai');
       }
-
+    } catch (err) {
+      console.error('Chat error:', err);
+      removeTypingIndicator(typingId);
+      addChatMessage(`<p>${escapeHtml(err.message || 'An error occurred while generating the chat response.')}</p>`, 'ai');
+    } finally {
+      removeTypingIndicator(typingId);
+      setChatBusy(false);
       renderSuggestedPrompts();
-    }, 800);
+      updateChatStatus();
+    }
   }
 
   function addChatMessage(content, type) {
     const div = document.createElement('div');
     div.className = `chat-message chat-message--${type}`;
 
-    const avatar = type === 'ai' ? '🧠' : '👤';
+    const avatar = type === 'ai' ? 'AI' : 'You';
     div.innerHTML = `
       <div class="chat-message__avatar">${avatar}</div>
       <div class="chat-message__bubble">${type === 'user' ? `<p>${escapeHtml(content)}</p>` : content}</div>
@@ -544,7 +672,7 @@ const App = (() => {
     div.className = 'chat-message chat-message--ai';
     div.id = id;
     div.innerHTML = `
-      <div class="chat-message__avatar">🧠</div>
+      <div class="chat-message__avatar">AI</div>
       <div class="chat-message__bubble">
         <div class="typing-indicator">
           <div class="typing-indicator__dot"></div>
