@@ -58,6 +58,9 @@ const App = (() => {
       quit_job: document.getElementById('panel-quit-job')
     };
 
+    // Currency inputs
+    DOM.currencyInputs = document.querySelectorAll('input[data-type="currency"]');
+
     // Buy a House inputs
     DOM.housePrice = document.getElementById('house-price');
     DOM.houseDownPayment = document.getElementById('house-down-payment');
@@ -179,6 +182,24 @@ const App = (() => {
       if (e.key === 'Enter') handleChatSend();
     });
 
+    // Currency formatting
+    DOM.currencyInputs.forEach(input => {
+      // Initial format
+      input.value = formatCurrencyInput(input.value);
+
+      input.addEventListener('input', (e) => {
+        const cursor = e.target.selectionStart;
+        const oldLen = e.target.value.length;
+        
+        const formatted = formatCurrencyInput(e.target.value);
+        e.target.value = formatted;
+
+        const newLen = formatted.length;
+        const pos = cursor + (newLen - oldLen);
+        e.target.setSelectionRange(pos, pos);
+      });
+    });
+
     // Window resize — re-render chart
     let resizeTimer;
     window.addEventListener('resize', () => {
@@ -207,6 +228,22 @@ const App = (() => {
       clearTimeout(timer);
       timer = setTimeout(() => fn(...args), delay);
     };
+  }
+
+  // --- Formatting Helpers ---
+  function formatCurrencyInput(val) {
+    if (val === null || val === undefined || val === '') return '';
+    // Strip everything but digits
+    const numeric = String(val).replace(/\D/g, '');
+    if (numeric === '') return '';
+    // Format with commas (Indian system)
+    return parseInt(numeric).toLocaleString('en-IN');
+  }
+
+  function parseCurrencyInput(val) {
+    if (!val) return 0;
+    const numeric = String(val).replace(/,/g, '');
+    return parseFloat(numeric) || 0;
   }
 
   // ===================================================
@@ -265,10 +302,10 @@ const App = (() => {
 
   function getProfile() {
     const age = parseInt(DOM.age.value) || 0;
-    const salary = parseFloat(DOM.salary.value) || 0;
-    const savings = parseFloat(DOM.savings.value) || 0;
-    const monthlyExpenses = parseFloat(DOM.expenses.value) || 0;
-    const goalAmount = parseFloat(DOM.goal.value) || 0;
+    const salary = parseCurrencyInput(DOM.salary.value);
+    const savings = parseCurrencyInput(DOM.savings.value);
+    const monthlyExpenses = parseCurrencyInput(DOM.expenses.value);
+    const goalAmount = parseCurrencyInput(DOM.goal.value);
     const years = parseInt(DOM.years?.value) || 10;
     const taxRate = (parseFloat(DOM.taxRate?.value) || 30) / 100;
 
@@ -291,19 +328,19 @@ const App = (() => {
     // Buy a House — build from user inputs
     if (scenarioId === 'buy_house') {
       return buildBuyHouseScenario({
-        propertyPrice: parseFloat(DOM.housePrice?.value) || 5000000,
-        downPayment: parseFloat(DOM.houseDownPayment?.value) || 1000000,
+        propertyPrice: parseCurrencyInput(DOM.housePrice?.value) || 5000000,
+        downPayment: parseCurrencyInput(DOM.houseDownPayment?.value) || 1000000,
         interestRate: parseFloat(DOM.houseInterestRate?.value) || 8.5,
         tenureYears: parseInt(DOM.houseTenure?.value) || 20,
-        monthlyMaintenance: parseFloat(DOM.houseMaintenance?.value) || 3000
+        monthlyMaintenance: parseCurrencyInput(DOM.houseMaintenance?.value) || 3000
       });
     }
 
     // Aggressive Investing — build from user inputs
     if (scenarioId === 'aggressive') {
       return buildAggressiveScenario({
-        initialInvestment: parseFloat(DOM.aggInitialInvestment?.value) || 100000,
-        monthlyInvestment: parseFloat(DOM.aggMonthlyInvestment?.value) || 10000,
+        initialInvestment: parseCurrencyInput(DOM.aggInitialInvestment?.value) || 100000,
+        monthlyInvestment: parseCurrencyInput(DOM.aggMonthlyInvestment?.value) || 10000,
         durationYears: parseInt(DOM.aggDuration?.value) || 10,
         returnProfile: DOM.aggReturnProfile?.value || 'aggressive',
         crashBehavior: DOM.aggCrashBehavior?.value || 'hold'
@@ -315,7 +352,7 @@ const App = (() => {
       return buildCareerSwitchScenario({
         jobStability: DOM.careerStability?.value || 'medium',
         switchTimeYears: parseFloat(DOM.careerSwitchTime?.value) || 1,
-        expectedStartSalary: parseFloat(DOM.careerStartSalary?.value) || 600000,
+        expectedStartSalary: parseCurrencyInput(DOM.careerStartSalary?.value) || 600000,
         expectedGrowthRate: parseFloat(DOM.careerGrowthRate?.value) || 12,
         incomeGapMonths: parseInt(DOM.careerIncomeGap?.value) || 3
       });
@@ -324,7 +361,7 @@ const App = (() => {
     // Start a Business — build from user inputs
     if (scenarioId === 'quit_job') {
       return buildBusinessScenario({
-        investmentAmount: parseFloat(DOM.bizInvestment?.value) || 300000,
+        investmentAmount: parseCurrencyInput(DOM.bizInvestment?.value) || 300000,
         businessRisk: DOM.bizRisk?.value || 'medium',
         timeCommitment: DOM.bizCommitment?.value || 'full_time'
       });
@@ -339,11 +376,11 @@ const App = (() => {
   // ===================================================
   function updateHouseEmiPreview() {
     if (!DOM.houseEmiPreview) return;
-    const price = parseFloat(DOM.housePrice?.value) || 5000000;
-    const down = parseFloat(DOM.houseDownPayment?.value) || 1000000;
+    const price = parseCurrencyInput(DOM.housePrice?.value) || 5000000;
+    const down = parseCurrencyInput(DOM.houseDownPayment?.value) || 1000000;
     const rate = parseFloat(DOM.houseInterestRate?.value) || 8.5;
     const tenure = parseInt(DOM.houseTenure?.value) || 20;
-    const maintenance = parseFloat(DOM.houseMaintenance?.value) || 3000;
+    const maintenance = parseCurrencyInput(DOM.houseMaintenance?.value) || 3000;
 
     const loan = Math.max(0, price - down);
     const mr = (rate / 100) / 12;
@@ -986,16 +1023,16 @@ const App = (() => {
     control.updates.forEach((update) => {
       switch (update.field) {
         case 'salary':
-          if (DOM.salary) DOM.salary.value = Math.round(update.value);
+          if (DOM.salary) DOM.salary.value = formatCurrencyInput(Math.round(update.value));
           break;
         case 'monthlyExpenses':
-          if (DOM.expenses) DOM.expenses.value = Math.round(update.value);
+          if (DOM.expenses) DOM.expenses.value = formatCurrencyInput(Math.round(update.value));
           break;
         case 'savings':
-          if (DOM.savings) DOM.savings.value = Math.round(update.value);
+          if (DOM.savings) DOM.savings.value = formatCurrencyInput(Math.round(update.value));
           break;
         case 'goalAmount':
-          if (DOM.goal) DOM.goal.value = Math.round(update.value);
+          if (DOM.goal) DOM.goal.value = formatCurrencyInput(Math.round(update.value));
           break;
         case 'taxRatePercent':
           if (DOM.taxRate) DOM.taxRate.value = update.value;

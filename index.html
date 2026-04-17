@@ -41,19 +41,19 @@
         </div>
         <div class="form-group">
           <label for="input-salary">Annual Salary (₹)</label>
-          <input type="number" id="input-salary" value="0" min="0" step="50000" placeholder="8,00,000" />
+          <input type="text" id="input-salary" value="" min="0" step="50000" placeholder="8,00,000" data-type="currency" />
         </div>
         <div class="form-group">
           <label for="input-savings">Current Savings (₹)</label>
-          <input type="number" id="input-savings" value="0" min="0" step="10000" placeholder="3,00,000" />
+          <input type="text" id="input-savings" value="" min="0" step="10000" placeholder="3,00,000" data-type="currency" />
         </div>
         <div class="form-group">
           <label for="input-expenses">Monthly Expenses (₹)</label>
-          <input type="number" id="input-expenses" value="0" min="0" step="1000" placeholder="35,000" />
+          <input type="text" id="input-expenses" value="" min="0" step="1000" placeholder="35,000" data-type="currency" />
         </div>
         <div class="form-group">
           <label for="input-goal">Wealth Goal (₹)</label>
-          <input type="number" id="input-goal" value="0" min="0" step="100000" placeholder="50,00,000" />
+          <input type="text" id="input-goal" value="" min="0" step="100000" placeholder="50,00,000" data-type="currency" />
         </div>
         <div class="form-group">
           <label for="input-years">Goal Timeframe (Years)</label>
@@ -162,11 +162,11 @@
         <div class="input-grid">
           <div class="form-group">
             <label for="house-price">Property Price (₹)</label>
-            <input type="number" id="house-price" value="5000000" min="100000" step="100000" placeholder="50,00,000" />
+            <input type="text" id="house-price" value="5000000" min="100000" step="100000" placeholder="50,00,000" data-type="currency" />
           </div>
           <div class="form-group">
             <label for="house-down-payment">Down Payment (₹)</label>
-            <input type="number" id="house-down-payment" value="1000000" min="0" step="50000" placeholder="10,00,000" />
+            <input type="text" id="house-down-payment" value="1000000" min="0" step="50000" placeholder="10,00,000" data-type="currency" />
           </div>
           <div class="form-group">
             <label for="house-interest-rate">Loan Interest Rate (%/yr)</label>
@@ -178,7 +178,7 @@
           </div>
           <div class="form-group">
             <label for="house-maintenance">Monthly Maintenance (₹)</label>
-            <input type="number" id="house-maintenance" value="3000" min="0" step="500" placeholder="3,000" />
+            <input type="text" id="house-maintenance" value="3000" min="0" step="500" placeholder="3,000" data-type="currency" />
           </div>
         </div>
         <div class="scenario-params-summary" id="house-emi-preview"></div>
@@ -190,11 +190,11 @@
         <div class="input-grid">
           <div class="form-group">
             <label for="agg-initial-investment">Initial Lump Sum (₹)</label>
-            <input type="number" id="agg-initial-investment" value="100000" min="0" step="10000" placeholder="1,00,000" />
+            <input type="text" id="agg-initial-investment" value="100000" min="0" step="10000" placeholder="1,00,000" data-type="currency" />
           </div>
           <div class="form-group">
             <label for="agg-monthly-investment">Monthly SIP (₹)</label>
-            <input type="number" id="agg-monthly-investment" value="10000" min="0" step="1000" placeholder="10,000" />
+            <input type="text" id="agg-monthly-investment" value="10000" min="0" step="1000" placeholder="10,000" data-type="currency" />
           </div>
           <div class="form-group">
             <label for="agg-duration">Investment Duration (years)</label>
@@ -237,7 +237,7 @@
           </div>
           <div class="form-group">
             <label for="career-start-salary">Expected Start Salary (₹/yr)</label>
-            <input type="number" id="career-start-salary" value="600000" min="0" step="50000" placeholder="6,00,000" />
+            <input type="text" id="career-start-salary" value="600000" min="0" step="50000" placeholder="6,00,000" data-type="currency" />
           </div>
           <div class="form-group">
             <label for="career-growth-rate">Expected Growth Rate (%/yr)</label>
@@ -256,7 +256,7 @@
         <div class="input-grid">
           <div class="form-group">
             <label for="biz-investment">Initial Investment (₹)</label>
-            <input type="number" id="biz-investment" value="300000" min="0" step="10000" placeholder="3,00,000" />
+            <input type="text" id="biz-investment" value="300000" min="0" step="10000" placeholder="3,00,000" data-type="currency" />
           </div>
           <div class="form-group">
             <label for="biz-risk">Business Risk Level</label>
