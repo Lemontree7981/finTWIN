@@ -1,6 +1,6 @@
 const ChatApi = (() => {
   function getConfig() {
-    const source = window.FinSimConfig?.chatApi || {};
+    const source = window.finTWINConfig?.chatApi || {};
     return {
       enabled: Boolean(source.enabled),
       transport: source.transport || 'openai-chat-completions',
