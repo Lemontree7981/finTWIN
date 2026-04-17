@@ -8,12 +8,19 @@ const App = (() => {
   let state = {
     profile: null,
     selectedScenario: 'baseline',
+    activeScenarioConfig: null,
     baselineResults: null,
     scenarioResults: null,
     behavioralReport: null,
     isRunning: false,
     chatOpen: false,
-    chatBusy: false
+    chatBusy: false,
+    chatMemory: {
+      goal: null,
+      riskProfile: null,
+      plannedEvents: [],
+      controls: {}
+    }
   };
 
   // --- DOM References ---
@@ -23,6 +30,7 @@ const App = (() => {
     cacheDOMRefs();
     bindEvents();
     selectScenario('baseline');
+    state.activeScenarioConfig = Scenarios.baseline;
     initChat();
     updateHealthIndicators();
   }
@@ -113,6 +121,7 @@ const App = (() => {
     DOM.chatInput = document.getElementById('chat-input');
     DOM.chatSend = document.getElementById('chat-send');
     DOM.chatPrompts = document.getElementById('chat-prompts');
+    DOM.chatMemory = document.getElementById('chat-memory');
     DOM.chatStatus = document.getElementById('chat-status');
 
     // Tax rate
@@ -364,6 +373,7 @@ const App = (() => {
     const baseline = Scenarios.baseline;
 
     state.profile = profile;
+    state.activeScenarioConfig = scenario;
     state.isRunning = true;
 
     DOM.runBtn.classList.add('loading');
@@ -750,6 +760,7 @@ const App = (() => {
   // ===================================================
   function initChat() {
     renderSuggestedPrompts();
+    renderChatMemory();
     updateChatStatus();
   }
 
@@ -775,7 +786,12 @@ const App = (() => {
   }
 
   function renderSuggestedPrompts() {
-    const prompts = ChatEngine.getContextualPrompts(state.scenarioResults, state.behavioralReport, 4);
+    const plannerPrompts = typeof PlannerEngine !== 'undefined'
+      ? PlannerEngine.getSuggestedPrompts(state.chatMemory)
+      : [];
+    const contextualPrompts = ChatEngine.getContextualPrompts(state.scenarioResults, state.behavioralReport, 6);
+    const prompts = [...new Set([...plannerPrompts, ...contextualPrompts])].slice(0, 4);
+
     if (DOM.chatPrompts) {
       DOM.chatPrompts.innerHTML = prompts.map(p =>
         `<button class="chat-prompt-chip" data-prompt="${p}">${p}</button>`
@@ -788,6 +804,27 @@ const App = (() => {
         });
       });
     }
+  }
+
+  function renderChatMemory() {
+    if (!DOM.chatMemory || typeof PlannerEngine === 'undefined') return;
+
+    const summary = PlannerEngine.buildMemorySummary(state.chatMemory);
+
+    if (!summary.length) {
+      DOM.chatMemory.innerHTML = `
+        <div class="chat-memory__label">Session Memory</div>
+        <div class="chat-memory__empty">No saved goals yet. Mention a timeline, target, or preference and I'll remember it for this session.</div>
+      `;
+      return;
+    }
+
+    DOM.chatMemory.innerHTML = `
+      <div class="chat-memory__label">Session Memory</div>
+      <div class="chat-memory__chips">
+        ${summary.map(item => `<span class="chat-memory__chip">${escapeHtml(item)}</span>`).join('')}
+      </div>
+    `;
   }
 
   function updateChatStatus() {
@@ -854,12 +891,13 @@ const App = (() => {
       selectedScenario: activeScenario,
       latestResults: summarizeResults(overrideResults || state.scenarioResults),
       baselineResults: summarizeResults(overrideBaseline || state.baselineResults),
-      behavioral: summarizeBehavioralReport(overrideBehavioral || state.behavioralReport)
+      behavioral: summarizeBehavioralReport(overrideBehavioral || state.behavioralReport),
+      sessionMemory: state.chatMemory
     };
   }
 
   function buildRemoteChatContext(message, chatRun = null) {
-    const scenario = chatRun?.scenarioResult?.scenario || getScenario();
+    const scenario = chatRun?.scenarioResult?.scenario || state.activeScenarioConfig || getScenario();
     const activeScenario = scenario ? { id: scenario.id, name: scenario.name } : null;
 
     return {
@@ -881,19 +919,28 @@ const App = (() => {
         chatRun?.scenarioResults || null,
         chatRun?.baselineResults || null,
         chatRun?.behavioralReport || null
-      )
+      ),
+      sessionMemory: state.chatMemory
     };
   }
 
-  function runChatScenario(intent) {
-    const profile = getProfile();
-    const scenarioResult = ChatEngine.buildScenarioFromIntent(intent, profile);
-    const chatProfile = { ...profile, ...scenarioResult.profileOverride };
+  function updateChatMemory(message, profile) {
+    if (typeof PlannerEngine === 'undefined') return;
 
-    intent.assumptions = scenarioResult.assumptions;
+    const patch = PlannerEngine.buildMemoryPatch(message, profile);
+    state.chatMemory = PlannerEngine.mergeMemory(state.chatMemory, patch);
+    renderChatMemory();
+  }
+
+  function simulateChatRun(intent, scenarioResult, profile) {
+    const chatProfile = { ...profile, ...(scenarioResult.profileOverride || {}) };
+
+    if (intent) {
+      intent.assumptions = scenarioResult.assumptions || [];
+    }
 
     const simOptions = {
-      years: scenarioResult.simulationOverride?.years || 10,
+      years: scenarioResult.simulationOverride?.years || scenarioResult.simulationYears || 10,
       runs: 1000
     };
 
@@ -911,6 +958,78 @@ const App = (() => {
       scenarioResults,
       behavioralReport
     };
+  }
+
+  function commitChatRun(chatRun) {
+    state.baselineResults = chatRun.baselineResults;
+    state.scenarioResults = chatRun.scenarioResults;
+    state.behavioralReport = chatRun.behavioralReport;
+    state.profile = chatRun.chatProfile;
+    state.activeScenarioConfig = chatRun.scenarioResult.scenario;
+
+    renderResults(
+      chatRun.scenarioResults,
+      chatRun.baselineResults,
+      chatRun.chatProfile,
+      chatRun.scenarioResult.scenario,
+      chatRun.behavioralReport
+    );
+  }
+
+  function applyDashboardControl(control) {
+    if (control.scenarioSelection) {
+      selectScenario(control.scenarioSelection);
+    }
+
+    control.updates.forEach((update) => {
+      switch (update.field) {
+        case 'salary':
+          if (DOM.salary) DOM.salary.value = Math.round(update.value);
+          break;
+        case 'monthlyExpenses':
+          if (DOM.expenses) DOM.expenses.value = Math.round(update.value);
+          break;
+        case 'savings':
+          if (DOM.savings) DOM.savings.value = Math.round(update.value);
+          break;
+        case 'goalAmount':
+          if (DOM.goal) DOM.goal.value = Math.round(update.value);
+          break;
+        case 'taxRatePercent':
+          if (DOM.taxRate) DOM.taxRate.value = update.value;
+          break;
+        case 'customExpenseInflation':
+          if (DOM.customExpenseInflation) DOM.customExpenseInflation.value = update.value;
+          break;
+        case 'customReturnMean':
+          if (DOM.customReturnMean) DOM.customReturnMean.value = update.value;
+          break;
+        case 'customReturnStd':
+          if (DOM.customReturnStd) DOM.customReturnStd.value = update.value;
+          break;
+        default:
+          break;
+      }
+    });
+
+    updateHealthIndicators();
+    if (state.selectedScenario === 'buy_house') updateHouseEmiPreview();
+  }
+
+  function buildControlIntent(control, message) {
+    return {
+      intent: 'dashboard_control',
+      matched: true,
+      originalQuery: message,
+      params: { updates: control.updates },
+      assumptions: control.updates.map((update) => update.label)
+    };
+  }
+
+  function runChatScenario(intent) {
+    const profile = getProfile();
+    const scenarioResult = ChatEngine.buildScenarioFromIntent(intent, profile);
+    return simulateChatRun(intent, scenarioResult, profile);
   }
 
   async function resolveMatchedChatResponse(message, chatRun) {
@@ -960,64 +1079,129 @@ const App = (() => {
     try {
       await wait(350);
 
+      const profile = getProfile();
+      updateChatMemory(message, profile);
+
+      const plannerControl = typeof PlannerEngine !== 'undefined'
+        ? PlannerEngine.detectDashboardControl(message)
+        : { matched: false };
+      const lifePlan = typeof PlannerEngine !== 'undefined'
+        ? PlannerEngine.detectLifePlan(message, profile)
+        : { matched: false };
+      const goalSeek = typeof PlannerEngine !== 'undefined'
+        ? PlannerEngine.detectGoalSeek(message, profile)
+        : { matched: false };
       const intent = ChatEngine.detectIntent(message);
       let responseHtml;
 
       // Check for scenario cloning intents
       const isCloneIntent = intent.intent.startsWith('clone_modify_');
 
-      if (isCloneIntent) {
-        // Clone current scenario with modifications
-        const activeScenario = state.scenarioResults?.scenario
-          ? Scenarios[state.scenarioResults.scenario] || Scenarios.baseline
-          : Scenarios[state.selectedScenario] || Scenarios.baseline;
-        const cloneResult = ChatEngine.buildClonedScenario(intent, getProfile(), activeScenario);
-        intent.matched = true;
-        intent.assumptions = cloneResult.assumptions;
+      if (plannerControl.matched) {
+        applyDashboardControl(plannerControl);
 
-        const chatRun = {
-          intent,
-          scenarioResult: cloneResult,
-          chatProfile: { ...getProfile(), ...cloneResult.profileOverride },
-          baselineResults: SimulationEngine.simulate({ ...getProfile(), ...cloneResult.profileOverride }, Scenarios.baseline, { years: 10, runs: 1000 }),
-          scenarioResults: SimulationEngine.simulate({ ...getProfile(), ...cloneResult.profileOverride }, cloneResult.scenario, { years: 10, runs: 1000 }),
-          behavioralReport: null
-        };
-        chatRun.behavioralReport = BehavioralEngine.analyze(
-          chatRun.chatProfile, chatRun.scenarioResults, chatRun.baselineResults, cloneResult.scenario
+        const controlIntent = buildControlIntent(plannerControl, message);
+        const controlRun = simulateChatRun(controlIntent, {
+          scenario: getScenario(),
+          profileOverride: {},
+          assumptions: controlIntent.assumptions
+        }, getProfile());
+
+        responseHtml = PlannerEngine.generateDashboardControlResponse(
+          plannerControl,
+          controlRun.scenarioResults,
+          controlRun.baselineResults,
+          controlRun.scenarioResult.scenario
         );
-
-        responseHtml = await resolveMatchedChatResponse(message, chatRun);
-
-        state.baselineResults = chatRun.baselineResults;
-        state.scenarioResults = chatRun.scenarioResults;
-        state.behavioralReport = chatRun.behavioralReport;
-        state.profile = chatRun.chatProfile;
 
         removeTypingIndicator(typingId);
         addChatMessage(responseHtml, 'ai');
-        renderResults(
-          chatRun.scenarioResults, chatRun.baselineResults,
-          chatRun.chatProfile, cloneResult.scenario, chatRun.behavioralReport
-        );
+        commitChatRun(controlRun);
+      } else if (lifePlan.matched) {
+        const planResult = PlannerEngine.buildLifePlanScenario(lifePlan.plan, profile, state.chatMemory);
+        const planIntent = {
+          intent: 'ai_life_plan',
+          matched: true,
+          originalQuery: message,
+          params: { summary: lifePlan.summary },
+          assumptions: planResult.assumptions
+        };
+        const chatRun = simulateChatRun(planIntent, {
+          scenario: planResult.scenario,
+          profileOverride: lifePlan.plan.goal?.targetAmount ? { goalAmount: lifePlan.plan.goal.targetAmount } : {},
+          assumptions: planResult.assumptions,
+          simulationYears: planResult.simulationYears
+        }, profile);
+
+        responseHtml = PlannerEngine.buildLifePlanResponse(chatRun, state.chatMemory);
+
+        removeTypingIndicator(typingId);
+        addChatMessage(responseHtml, 'ai');
+        commitChatRun(chatRun);
+      } else if (goalSeek.matched) {
+        const goalPlan = PlannerEngine.buildGoalPlan(goalSeek, profile, state.chatMemory);
+        responseHtml = PlannerEngine.buildGoalPlanResponse(goalPlan);
+
+        const goalProfile = { ...profile, goalAmount: goalSeek.targetAmount };
+        const goalScenarioResult = {
+          scenario: goalPlan.displayScenario,
+          profileOverride: { goalAmount: goalSeek.targetAmount },
+          assumptions: [
+            `Target: ${ChatEngine.formatINRShort(goalSeek.targetAmount)}`,
+            `Horizon: ${goalSeek.years} years`,
+            `Risk profile: ${goalPlan.riskProfile}`,
+            goalPlan.requiredExtraMonthly === null
+              ? 'Target gap remains under current assumptions'
+              : `Extra investing needed: Rs ${Math.round(goalPlan.requiredExtraMonthly).toLocaleString('en-IN')}/month`
+          ]
+        };
+        const goalChatRun = {
+          intent: {
+            intent: 'goal_seek',
+            matched: true,
+            originalQuery: message,
+            params: {
+              targetAmount: goalSeek.targetAmount,
+              years: goalSeek.years,
+              targetAge: goalSeek.targetAge || null
+            },
+            assumptions: goalScenarioResult.assumptions
+          },
+          scenarioResult: goalScenarioResult,
+          chatProfile: goalProfile,
+          baselineResults: goalPlan.baselineResults,
+          scenarioResults: goalPlan.targetResults,
+          behavioralReport: BehavioralEngine.analyze(
+            goalProfile,
+            goalPlan.targetResults,
+            goalPlan.baselineResults,
+            goalPlan.displayScenario
+          )
+        };
+
+        removeTypingIndicator(typingId);
+        addChatMessage(responseHtml, 'ai');
+        commitChatRun(goalChatRun);
+      } else if (isCloneIntent) {
+        // Clone current scenario with modifications
+        const activeScenario = state.activeScenarioConfig || (state.scenarioResults?.scenario
+          ? Scenarios[state.scenarioResults.scenario] || Scenarios.baseline
+          : Scenarios[state.selectedScenario] || Scenarios.baseline);
+        const cloneResult = ChatEngine.buildClonedScenario(intent, getProfile(), activeScenario);
+        const chatRun = simulateChatRun(intent, cloneResult, getProfile());
+
+        responseHtml = await resolveMatchedChatResponse(message, chatRun);
+
+        removeTypingIndicator(typingId);
+        addChatMessage(responseHtml, 'ai');
+        commitChatRun(chatRun);
       } else if (intent.matched) {
         const chatRun = runChatScenario(intent);
         responseHtml = await resolveMatchedChatResponse(message, chatRun);
 
-        state.baselineResults = chatRun.baselineResults;
-        state.scenarioResults = chatRun.scenarioResults;
-        state.behavioralReport = chatRun.behavioralReport;
-        state.profile = chatRun.chatProfile;
-
         removeTypingIndicator(typingId);
         addChatMessage(responseHtml, 'ai');
-        renderResults(
-          chatRun.scenarioResults,
-          chatRun.baselineResults,
-          chatRun.chatProfile,
-          chatRun.scenarioResult.scenario,
-          chatRun.behavioralReport
-        );
+        commitChatRun(chatRun);
       } else {
         responseHtml = await resolveOpenChatResponse(message);
         removeTypingIndicator(typingId);

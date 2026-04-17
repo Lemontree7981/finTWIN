@@ -187,6 +187,7 @@ const ChatApi = (() => {
       'Prefer short paragraphs.',
       'Use flat bullet lists only when they add clarity.',
       'If the scenario numbers are included, anchor your answer in them.',
+      'Use session memory when it is provided and keep it internally consistent.',
       'If information is missing, say what is uncertain instead of guessing.',
       'Treat the reply as end-user UI copy, not developer output.'
     ].join(' ');
@@ -198,7 +199,8 @@ const ChatApi = (() => {
       currentProfile: context.profile || null,
       activeScenario: context.activeScenario || null,
       scenarioAnalysis: context.scenarioAnalysis || null,
-      latestDashboardState: context.latestDashboardState || null
+      latestDashboardState: context.latestDashboardState || null,
+      sessionMemory: context.sessionMemory || null
     };
 
     return [
