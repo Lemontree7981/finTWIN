@@ -1,6 +1,6 @@
 /**
- * App Controller
- * Wires DOM events, manages state, orchestrates simulation → render → narrative
+ * App Controller â€” AI Financial Digital Twin
+ * Wires DOM events, manages state, orchestrates simulation â†’ behavioral â†’ render â†’ narrative â†’ chat
  */
 
 const App = (() => {
@@ -10,7 +10,10 @@ const App = (() => {
     selectedScenario: 'baseline',
     baselineResults: null,
     scenarioResults: null,
-    isRunning: false
+    behavioralReport: null,
+    isRunning: false,
+    chatOpen: false,
+    chatBusy: false
   };
 
   // --- DOM References ---
@@ -20,6 +23,8 @@ const App = (() => {
     cacheDOMRefs();
     bindEvents();
     selectScenario('baseline');
+    initChat();
+    updateHealthIndicators();
   }
 
   function cacheDOMRefs() {
@@ -35,6 +40,7 @@ const App = (() => {
     DOM.narrativeContent = document.getElementById('narrative-content');
     DOM.narrativeSource = document.getElementById('narrative-source');
     DOM.customPanel = document.getElementById('custom-panel');
+
     // Metric cards
     DOM.metricMedian = document.getElementById('metric-median');
     DOM.metricBest = document.getElementById('metric-best');
@@ -58,6 +64,21 @@ const App = (() => {
     DOM.customReturnStd = document.getElementById('custom-return-std');
     DOM.customIncomeGrowth = document.getElementById('custom-income-growth');
     DOM.customExpenseInflation = document.getElementById('custom-expense-inflation');
+
+    // Health indicators
+    DOM.healthSavingsRate = document.getElementById('health-savings-rate-value');
+    DOM.healthEmergency = document.getElementById('health-emergency-value');
+    DOM.healthExpenseRatio = document.getElementById('health-expense-ratio-value');
+
+    // Chat elements
+    DOM.chatFab = document.getElementById('chat-fab');
+    DOM.chatPanel = document.getElementById('chat-panel');
+    DOM.chatClose = document.getElementById('chat-close');
+    DOM.chatMessages = document.getElementById('chat-messages');
+    DOM.chatInput = document.getElementById('chat-input');
+    DOM.chatSend = document.getElementById('chat-send');
+    DOM.chatPrompts = document.getElementById('chat-prompts');
+    DOM.chatStatus = document.getElementById('chat-status');
   }
 
   function bindEvents() {
@@ -72,13 +93,23 @@ const App = (() => {
     DOM.runBtn.addEventListener('click', runSimulation);
 
     // Allow Enter key to trigger run
-    document.querySelectorAll('.form-group input').forEach(input => {
+    document.querySelectorAll('.input-panel .form-group input').forEach(input => {
       input.addEventListener('keydown', (e) => {
         if (e.key === 'Enter') runSimulation();
       });
+      // Update health indicators on input change
+      input.addEventListener('input', debounce(updateHealthIndicators, 300));
     });
 
-    // Window resize — re-render chart
+    // Chat events
+    DOM.chatFab.addEventListener('click', toggleChat);
+    DOM.chatClose.addEventListener('click', closeChat);
+    DOM.chatSend.addEventListener('click', handleChatSend);
+    DOM.chatInput.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') handleChatSend();
+    });
+
+    // Window resize â€” re-render chart
     let resizeTimer;
     window.addEventListener('resize', () => {
       clearTimeout(resizeTimer);
@@ -90,6 +121,41 @@ const App = (() => {
     });
   }
 
+  function debounce(fn, delay) {
+    let timer;
+    return (...args) => {
+      clearTimeout(timer);
+      timer = setTimeout(() => fn(...args), delay);
+    };
+  }
+
+  // ===================================================
+  // Health Indicators (live update from input fields)
+  // ===================================================
+  function updateHealthIndicators() {
+    const profile = getProfile();
+    const annualExpenses = profile.monthlyExpenses * 12;
+    const savingsRate = ((profile.salary - annualExpenses) / profile.salary) * 100;
+    const emergencyMonths = profile.savings / profile.monthlyExpenses;
+    const expenseRatio = (profile.monthlyExpenses / (profile.salary / 12)) * 100;
+
+    if (DOM.healthSavingsRate) {
+      DOM.healthSavingsRate.textContent = savingsRate.toFixed(1) + '%';
+      DOM.healthSavingsRate.style.color = savingsRate >= 20 ? '#00d4aa' : savingsRate >= 10 ? '#ffd93d' : '#ff6b6b';
+    }
+    if (DOM.healthEmergency) {
+      DOM.healthEmergency.textContent = emergencyMonths.toFixed(1) + ' mo';
+      DOM.healthEmergency.style.color = emergencyMonths >= 6 ? '#00d4aa' : emergencyMonths >= 3 ? '#ffd93d' : '#ff6b6b';
+    }
+    if (DOM.healthExpenseRatio) {
+      DOM.healthExpenseRatio.textContent = expenseRatio.toFixed(0) + '%';
+      DOM.healthExpenseRatio.style.color = expenseRatio <= 50 ? '#00d4aa' : expenseRatio <= 70 ? '#ffd93d' : '#ff6b6b';
+    }
+  }
+
+  // ===================================================
+  // Scenario Selection
+  // ===================================================
   function selectScenario(scenarioId) {
     state.selectedScenario = scenarioId;
 
@@ -97,7 +163,6 @@ const App = (() => {
       card.classList.toggle('active', card.dataset.scenario === scenarioId);
     });
 
-    // Show/hide custom panel
     if (DOM.customPanel) {
       DOM.customPanel.classList.toggle('visible', scenarioId === 'custom');
     }
@@ -117,7 +182,6 @@ const App = (() => {
     const scenarioId = state.selectedScenario;
     let scenario = { ...Scenarios[scenarioId] };
 
-    // Apply custom overrides
     if (scenarioId === 'custom') {
       scenario.returnMean = (parseFloat(DOM.customReturnMean?.value) || 10) / 100;
       scenario.returnStd = (parseFloat(DOM.customReturnStd?.value) || 18) / 100;
@@ -128,6 +192,9 @@ const App = (() => {
     return scenario;
   }
 
+  // ===================================================
+  // Main Simulation Run
+  // ===================================================
   function runSimulation() {
     if (state.isRunning) return;
 
@@ -138,25 +205,26 @@ const App = (() => {
     state.profile = profile;
     state.isRunning = true;
 
-    // UI: loading state
     DOM.runBtn.classList.add('loading');
     DOM.runBtn.disabled = true;
 
-    // Use requestAnimationFrame + setTimeout to let the UI update
     requestAnimationFrame(() => {
       setTimeout(() => {
         try {
-          // Run baseline
           state.baselineResults = SimulationEngine.simulate(profile, baseline, { years: 10, runs: 1000 });
 
-          // Run selected scenario
           if (scenario.id === 'baseline') {
             state.scenarioResults = state.baselineResults;
           } else {
             state.scenarioResults = SimulationEngine.simulate(profile, scenario, { years: 10, runs: 1000 });
           }
 
-          renderResults(state.scenarioResults, state.baselineResults, profile, scenario);
+          // Run behavioral analysis
+          state.behavioralReport = BehavioralEngine.analyze(
+            profile, state.scenarioResults, state.baselineResults, scenario
+          );
+
+          renderResults(state.scenarioResults, state.baselineResults, profile, scenario, state.behavioralReport);
         } catch (err) {
           console.error('Simulation error:', err);
         } finally {
@@ -168,11 +236,12 @@ const App = (() => {
     });
   }
 
-  function renderResults(results, baselineResults, profile, scenario) {
-    // Show results section
+  // ===================================================
+  // Render Results
+  // ===================================================
+  function renderResults(results, baselineResults, profile, scenario, behavioralReport) {
     DOM.resultsSection.classList.add('visible');
 
-    // Smooth scroll to results
     setTimeout(() => {
       DOM.resultsSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
     }, 100);
@@ -180,7 +249,7 @@ const App = (() => {
     const s = results.stats;
     const b = baselineResults.stats;
 
-    // --- Metric cards ---
+    // Metric cards
     animateMetric(DOM.metricMedian, s.final.median);
     animateMetric(DOM.metricBest, s.final.p95);
     animateMetric(DOM.metricWorst, s.final.p5);
@@ -188,7 +257,6 @@ const App = (() => {
     animateMetricPercent(DOM.metricRuin, s.ruinProbability);
     animateMetric(DOM.metricBaseline, b.final.median);
 
-    // Sub labels
     setSubLabel(DOM.metricMedian, 'Most likely outcome');
     setSubLabel(DOM.metricBest, 'Top 5% of outcomes');
     setSubLabel(DOM.metricWorst, 'Bottom 5% of outcomes');
@@ -196,7 +264,7 @@ const App = (() => {
     setSubLabel(DOM.metricRuin, s.ruinProbability > 0 ? `${s.ruinWithin3Prob.toFixed(0)}% within 3 years` : 'Savings remain positive');
     setSubLabel(DOM.metricBaseline, 'Continue working (median)');
 
-    // --- Risk gauge ---
+    // Risk gauge
     const riskScore = computeRiskScore(s);
     const riskInfo = getRiskLabel(riskScore);
     DOM.riskBar.style.width = riskScore + '%';
@@ -206,27 +274,25 @@ const App = (() => {
     DOM.riskScore.textContent = riskScore + '/100';
     DOM.riskScore.style.color = riskInfo.color;
 
-    // --- Fan chart ---
+    // Fan chart
     const baselineOverlay = scenario.id !== 'baseline' ? baselineResults : null;
     ChartRenderer.render(DOM.chartCanvas, results, baselineOverlay, true);
 
-    // --- Comparison ---
+    // Comparison
     renderComparison(s, b, scenario);
 
-    // --- Narrative ---
-    DOM.narrativeContent.innerHTML = '<div class="narrative-loading"><div class="narrative-loading__spinner"></div><span>Preparing analysis...</span></div>';
+    // Narrative (with behavioral report)
+    DOM.narrativeContent.innerHTML = '<div class="narrative-loading"><div class="narrative-loading__spinner"></div><span>Analyzing with AI...</span></div>';
     DOM.narrativeContent.style.opacity = '1';
     DOM.narrativeContent.style.transform = 'translateY(0)';
     if (DOM.narrativeSource) DOM.narrativeSource.innerHTML = '';
 
-    NarrativeGenerator.generate(results, baselineResults, profile, scenario)
+    NarrativeGenerator.generate(results, baselineResults, profile, scenario, behavioralReport)
       .then(({ html, source }) => {
         DOM.narrativeContent.innerHTML = html;
 
         if (DOM.narrativeSource) {
-          DOM.narrativeSource.innerHTML = source === 'template'
-            ? '<span class="source-badge source-badge--template">Local Analysis</span>'
-            : '';
+          DOM.narrativeSource.innerHTML = '<span class="source-badge source-badge--template">AI Analysis</span>';
         }
 
         // Animate in
@@ -240,10 +306,13 @@ const App = (() => {
       })
       .catch(err => {
         console.error('Narrative generation error:', err);
-        DOM.narrativeContent.innerHTML = `<div class="warning-box"><strong>Error:</strong> ${err.message}</div>`;
+        DOM.narrativeContent.innerHTML = `<div class="decision-verdict decision-verdict--risky"><strong>Error:</strong> ${err.message}</div>`;
       });
   }
 
+  // ===================================================
+  // Animation Helpers
+  // ===================================================
   function animateMetric(el, value) {
     if (!el) return;
     const valueEl = el.querySelector('.metric-card__value');
@@ -300,7 +369,6 @@ const App = (() => {
       { label: 'Mean', key: 'mean' }
     ];
 
-    // Baseline column
     if (DOM.compBaseline) {
       DOM.compBaseline.innerHTML = rows.map(row => `
         <div class="comparison-row">
@@ -310,12 +378,11 @@ const App = (() => {
       `).join('');
     }
 
-    // Scenario column
     if (DOM.compScenario) {
       DOM.compScenario.innerHTML = rows.map(row => {
         const diff = s.final[row.key] - b.final[row.key];
         const colorClass = diff > 0 ? 'positive' : diff < 0 ? 'negative' : 'neutral';
-        const arrow = diff > 0 ? '↑' : diff < 0 ? '↓' : '→';
+        const arrow = diff > 0 ? '+' : diff < 0 ? '-' : '=';
         return `
           <div class="comparison-row">
             <span class="comparison-row__label">${row.label}</span>
@@ -327,10 +394,307 @@ const App = (() => {
       }).join('');
     }
 
-    // Update scenario title
     if (DOM.compScenarioTitle) {
       DOM.compScenarioTitle.innerHTML = `<span class="dot"></span> ${scenario.name}`;
     }
+  }
+
+  // ===================================================
+  // Chat System
+  // ===================================================
+  function initChat() {
+    renderSuggestedPrompts();
+    updateChatStatus();
+  }
+
+  function toggleChat() {
+    if (state.chatOpen) {
+      closeChat();
+    } else {
+      openChat();
+    }
+  }
+
+  function openChat() {
+    state.chatOpen = true;
+    DOM.chatPanel.classList.add('visible');
+    DOM.chatFab.classList.add('hidden');
+    DOM.chatInput.focus();
+  }
+
+  function closeChat() {
+    state.chatOpen = false;
+    DOM.chatPanel.classList.remove('visible');
+    DOM.chatFab.classList.remove('hidden');
+  }
+
+  function renderSuggestedPrompts() {
+    const prompts = ChatEngine.getRandomPrompts(4);
+    if (DOM.chatPrompts) {
+      DOM.chatPrompts.innerHTML = prompts.map(p =>
+        `<button class="chat-prompt-chip" data-prompt="${p}">${p}</button>`
+      ).join('');
+
+      DOM.chatPrompts.querySelectorAll('.chat-prompt-chip').forEach(chip => {
+        chip.addEventListener('click', () => {
+          DOM.chatInput.value = chip.dataset.prompt;
+          handleChatSend();
+        });
+      });
+    }
+  }
+
+  function updateChatStatus() {
+    if (!DOM.chatStatus) return;
+
+    if (typeof ChatApi === 'undefined') {
+      DOM.chatStatus.textContent = 'Local simulator mode';
+      DOM.chatStatus.dataset.mode = 'local';
+      return;
+    }
+
+    DOM.chatStatus.textContent = ChatApi.getStatusText();
+    DOM.chatStatus.dataset.mode = ChatApi.getMode();
+  }
+
+  function setChatBusy(isBusy) {
+    state.chatBusy = isBusy;
+
+    if (DOM.chatInput) {
+      DOM.chatInput.disabled = isBusy;
+      if (!isBusy && state.chatOpen) DOM.chatInput.focus();
+    }
+
+    if (DOM.chatSend) {
+      DOM.chatSend.disabled = isBusy;
+    }
+  }
+
+  function wait(ms) {
+    return new Promise(resolve => setTimeout(resolve, ms));
+  }
+
+  function summarizeResults(results) {
+    if (!results?.stats) return null;
+
+    return {
+      years: results.years,
+      medianFinalWealth: results.stats.final.median,
+      bestCaseFinalWealth: results.stats.final.p95,
+      worstCaseFinalWealth: results.stats.final.p5,
+      goalProbability: results.stats.goalProbability,
+      ruinProbability: results.stats.ruinProbability
+    };
+  }
+
+  function summarizeBehavioralReport(behavioralReport) {
+    if (!behavioralReport) return null;
+
+    return {
+      healthScore: behavioralReport.healthScore,
+      savingsRate: behavioralReport.savingsRate,
+      emergencyMonths: behavioralReport.emergencyMonths,
+      expenseRatio: behavioralReport.expenseRatio,
+      keyInsights: (behavioralReport.insights || []).slice(0, 3).map((insight) => ({
+        title: insight.title,
+        severity: insight.severity,
+        message: insight.message
+      }))
+    };
+  }
+
+  function buildDashboardContext(activeScenario, overrideResults = null, overrideBaseline = null, overrideBehavioral = null) {
+    return {
+      selectedScenario: activeScenario,
+      latestResults: summarizeResults(overrideResults || state.scenarioResults),
+      baselineResults: summarizeResults(overrideBaseline || state.baselineResults),
+      behavioral: summarizeBehavioralReport(overrideBehavioral || state.behavioralReport)
+    };
+  }
+
+  function buildRemoteChatContext(message, chatRun = null) {
+    const scenario = chatRun?.scenarioResult?.scenario || getScenario();
+    const activeScenario = scenario ? { id: scenario.id, name: scenario.name } : null;
+
+    return {
+      message,
+      profile: chatRun?.chatProfile || state.profile || getProfile(),
+      activeScenario,
+      scenarioAnalysis: chatRun
+        ? ChatEngine.buildAiContext(
+          chatRun.intent,
+          chatRun.scenarioResults,
+          chatRun.baselineResults,
+          chatRun.chatProfile,
+          chatRun.scenarioResult.scenario,
+          chatRun.behavioralReport
+        )
+        : null,
+      latestDashboardState: buildDashboardContext(
+        activeScenario,
+        chatRun?.scenarioResults || null,
+        chatRun?.baselineResults || null,
+        chatRun?.behavioralReport || null
+      )
+    };
+  }
+
+  function runChatScenario(intent) {
+    const profile = getProfile();
+    const scenarioResult = ChatEngine.buildScenarioFromIntent(intent, profile);
+    const chatProfile = { ...profile, ...scenarioResult.profileOverride };
+
+    intent.assumptions = scenarioResult.assumptions;
+
+    const simOptions = {
+      years: scenarioResult.simulationOverride?.years || 10,
+      runs: 1000
+    };
+
+    const baselineResults = SimulationEngine.simulate(chatProfile, Scenarios.baseline, simOptions);
+    const scenarioResults = SimulationEngine.simulate(chatProfile, scenarioResult.scenario, simOptions);
+    const behavioralReport = BehavioralEngine.analyze(
+      chatProfile, scenarioResults, baselineResults, scenarioResult.scenario
+    );
+
+    return {
+      intent,
+      scenarioResult,
+      chatProfile,
+      baselineResults,
+      scenarioResults,
+      behavioralReport
+    };
+  }
+
+  async function resolveMatchedChatResponse(message, chatRun) {
+    const localResponse = ChatEngine.generateChatResponse(
+      chatRun.intent,
+      chatRun.scenarioResults,
+      chatRun.baselineResults,
+      chatRun.chatProfile,
+      chatRun.scenarioResult.scenario,
+      chatRun.behavioralReport
+    );
+
+    if (typeof ChatApi === 'undefined' || !ChatApi.canUseRemote()) {
+      return localResponse;
+    }
+
+    try {
+      return await ChatApi.generateReply(buildRemoteChatContext(message, chatRun));
+    } catch (err) {
+      console.error('Live AI chat error:', err);
+      return localResponse;
+    }
+  }
+
+  async function resolveOpenChatResponse(message) {
+    if (typeof ChatApi !== 'undefined' && ChatApi.canUseRemote()) {
+      return ChatApi.generateReply(buildRemoteChatContext(message));
+    }
+
+    if (typeof ChatApi !== 'undefined' && ChatApi.hasApiKey()) {
+      return ChatApi.getSetupHintHtml();
+    }
+
+    return ChatEngine.getUnknownIntentResponse();
+  }
+
+  async function handleChatSend() {
+    const message = DOM.chatInput.value.trim();
+    if (!message || state.isRunning || state.chatBusy) return;
+
+    addChatMessage(message, 'user');
+    DOM.chatInput.value = '';
+    setChatBusy(true);
+
+    const typingId = addTypingIndicator();
+
+    try {
+      await wait(350);
+
+      const intent = ChatEngine.detectIntent(message);
+      let responseHtml;
+
+      if (intent.matched) {
+        const chatRun = runChatScenario(intent);
+        responseHtml = await resolveMatchedChatResponse(message, chatRun);
+
+        state.baselineResults = chatRun.baselineResults;
+        state.scenarioResults = chatRun.scenarioResults;
+        state.behavioralReport = chatRun.behavioralReport;
+        state.profile = chatRun.chatProfile;
+
+        removeTypingIndicator(typingId);
+        addChatMessage(responseHtml, 'ai');
+        renderResults(
+          chatRun.scenarioResults,
+          chatRun.baselineResults,
+          chatRun.chatProfile,
+          chatRun.scenarioResult.scenario,
+          chatRun.behavioralReport
+        );
+      } else {
+        responseHtml = await resolveOpenChatResponse(message);
+        removeTypingIndicator(typingId);
+        addChatMessage(responseHtml, 'ai');
+      }
+    } catch (err) {
+      console.error('Chat error:', err);
+      removeTypingIndicator(typingId);
+      addChatMessage(`<p>${escapeHtml(err.message || 'An error occurred while generating the chat response.')}</p>`, 'ai');
+    } finally {
+      removeTypingIndicator(typingId);
+      setChatBusy(false);
+      renderSuggestedPrompts();
+      updateChatStatus();
+    }
+  }
+
+  function addChatMessage(content, type) {
+    const div = document.createElement('div');
+    div.className = `chat-message chat-message--${type}`;
+
+    const avatar = type === 'ai' ? 'AI' : 'You';
+    div.innerHTML = `
+      <div class="chat-message__avatar">${avatar}</div>
+      <div class="chat-message__bubble">${type === 'user' ? `<p>${escapeHtml(content)}</p>` : content}</div>
+    `;
+
+    DOM.chatMessages.appendChild(div);
+    DOM.chatMessages.scrollTop = DOM.chatMessages.scrollHeight;
+  }
+
+  function addTypingIndicator() {
+    const id = 'typing-' + Date.now();
+    const div = document.createElement('div');
+    div.className = 'chat-message chat-message--ai';
+    div.id = id;
+    div.innerHTML = `
+      <div class="chat-message__avatar">AI</div>
+      <div class="chat-message__bubble">
+        <div class="typing-indicator">
+          <div class="typing-indicator__dot"></div>
+          <div class="typing-indicator__dot"></div>
+          <div class="typing-indicator__dot"></div>
+        </div>
+      </div>
+    `;
+    DOM.chatMessages.appendChild(div);
+    DOM.chatMessages.scrollTop = DOM.chatMessages.scrollHeight;
+    return id;
+  }
+
+  function removeTypingIndicator(id) {
+    const el = document.getElementById(id);
+    if (el) el.remove();
+  }
+
+  function escapeHtml(text) {
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
   }
 
   // --- Initialize on DOM ready ---
@@ -340,5 +704,5 @@ const App = (() => {
     init();
   }
 
-  return { runSimulation, selectScenario };
+  return { runSimulation, selectScenario, toggleChat };
 })();
