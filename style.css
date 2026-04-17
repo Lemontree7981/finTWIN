@@ -1962,3 +1962,201 @@ body::after {
     right: 16px;
   }
 }
+
+/* ===================================================
+   ACTION PLAN — Decision Guidance expanded cards
+   =================================================== */
+.action-plan {
+  margin-top: 18px;
+}
+
+.action-plan h4 {
+  font-size: 0.88rem;
+  font-weight: 700;
+  color: var(--text-primary);
+  margin-bottom: 14px;
+}
+
+.action-plan__grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 14px;
+}
+
+.action-plan__card {
+  padding: 16px 18px;
+  border-radius: var(--radius-sm);
+  border-left: 4px solid;
+  font-size: 0.84rem;
+}
+
+.action-plan__card ul {
+  margin: 8px 0 0 16px;
+  list-style: disc;
+}
+
+.action-plan__card li {
+  margin-bottom: 8px;
+  line-height: 1.6;
+  color: var(--text-secondary);
+}
+
+.action-plan__card li:last-child {
+  margin-bottom: 0;
+}
+
+.action-plan__card-header {
+  font-weight: 700;
+  font-size: 0.82rem;
+  margin-bottom: 6px;
+  color: var(--text-primary);
+}
+
+.action-plan__card--immediate {
+  background: rgba(255, 107, 107, 0.04);
+  border-left-color: var(--coral);
+}
+
+.action-plan__card--immediate .action-plan__card-header {
+  color: var(--coral);
+}
+
+.action-plan__card--short {
+  background: rgba(255, 217, 61, 0.04);
+  border-left-color: var(--gold);
+}
+
+.action-plan__card--short .action-plan__card-header {
+  color: var(--gold);
+}
+
+.action-plan__card--long {
+  background: rgba(0, 212, 170, 0.04);
+  border-left-color: var(--teal);
+}
+
+.action-plan__card--long .action-plan__card-header {
+  color: var(--teal);
+}
+
+/* ===================================================
+   EARNING STRATEGIES — New Section 6
+   =================================================== */
+.narrative-section--earning {
+  border-top: 1px solid rgba(255, 217, 61, 0.12);
+  padding-top: 20px;
+}
+
+.earning-gap-analysis {
+  padding: 14px 18px;
+  background: rgba(255, 217, 61, 0.05);
+  border: 1px solid rgba(255, 217, 61, 0.12);
+  border-radius: var(--radius-sm);
+  margin-bottom: 18px;
+  font-size: 0.86rem;
+  line-height: 1.6;
+}
+
+.earning-success {
+  padding: 14px 18px;
+  background: rgba(0, 212, 170, 0.06);
+  border: 1px solid rgba(0, 212, 170, 0.15);
+  border-radius: var(--radius-sm);
+  margin-bottom: 18px;
+  font-size: 0.86rem;
+  line-height: 1.6;
+}
+
+.earning-tip {
+  padding: 14px 18px;
+  background: rgba(96, 165, 250, 0.05);
+  border: 1px solid rgba(96, 165, 250, 0.12);
+  border-radius: var(--radius-sm);
+  margin-bottom: 18px;
+  font-size: 0.86rem;
+  line-height: 1.6;
+}
+
+.earning-strategies-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+  margin-bottom: 18px;
+}
+
+@media (max-width: 768px) {
+  .earning-strategies-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.earning-strategy-card {
+  padding: 18px;
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: var(--radius-md);
+  transition: all var(--transition-fast);
+}
+
+.earning-strategy-card:hover {
+  background: rgba(255, 255, 255, 0.04);
+  border-color: rgba(255, 255, 255, 0.1);
+  transform: translateY(-2px);
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.2);
+}
+
+.earning-strategy-card__icon {
+  font-size: 1.6rem;
+  margin-bottom: 8px;
+}
+
+.earning-strategy-card__title {
+  font-size: 0.88rem;
+  font-weight: 700;
+  color: var(--text-primary);
+  margin-bottom: 10px;
+}
+
+.earning-strategy-card__body {
+  font-size: 0.82rem;
+  line-height: 1.65;
+  color: var(--text-secondary);
+}
+
+.earning-strategy-card__body p {
+  margin-bottom: 10px;
+}
+
+.earning-strategy-card__body ul {
+  margin: 8px 0 0 16px;
+  list-style: disc;
+}
+
+.earning-strategy-card__body li {
+  margin-bottom: 8px;
+  line-height: 1.55;
+}
+
+.earning-strategy-card__body li:last-child {
+  margin-bottom: 0;
+}
+
+/* Earning summary callout */
+.earning-summary-callout {
+  padding: 16px 20px;
+  background: linear-gradient(135deg, rgba(0, 212, 170, 0.06), rgba(96, 165, 250, 0.06));
+  border: 1px solid rgba(0, 212, 170, 0.15);
+  border-radius: var(--radius-sm);
+  font-size: 0.86rem;
+  line-height: 1.7;
+  color: var(--text-secondary);
+}
+
+.earning-summary-callout strong {
+  color: var(--text-primary);
+}
+
+.earning-summary-callout--success {
+  background: linear-gradient(135deg, rgba(0, 212, 170, 0.08), rgba(74, 222, 128, 0.06));
+  border-color: rgba(0, 212, 170, 0.2);
+}

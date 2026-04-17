@@ -263,11 +263,11 @@ const App = (() => {
   }
 
   function getProfile() {
-    const age = parseInt(DOM.age.value) || 28;
-    const salary = parseFloat(DOM.salary.value) || 800000;
-    const savings = parseFloat(DOM.savings.value) || 300000;
-    const monthlyExpenses = parseFloat(DOM.expenses.value) || 35000;
-    const goalAmount = parseFloat(DOM.goal.value) || 5000000;
+    const age = parseInt(DOM.age.value) || 0;
+    const salary = parseFloat(DOM.salary.value) || 0;
+    const savings = parseFloat(DOM.savings.value) || 0;
+    const monthlyExpenses = parseFloat(DOM.expenses.value) || 0;
+    const goalAmount = parseFloat(DOM.goal.value) || 0;
     const taxRate = (parseFloat(DOM.taxRate?.value) || 30) / 100;
 
     return { age, salary, savings, monthlyExpenses, goalAmount, taxRate };

@@ -32,23 +32,27 @@
       <div class="input-grid">
         <div class="form-group">
           <label for="input-age">Age</label>
-          <input type="number" id="input-age" value="28" min="18" max="70" placeholder="28" />
+          <input type="number" id="input-age" value="18" min="18" max="70" placeholder="18" />
         </div>
         <div class="form-group">
           <label for="input-salary">Annual Salary (₹)</label>
-          <input type="number" id="input-salary" value="800000" min="0" step="50000" placeholder="8,00,000" />
+          <input type="number" id="input-salary" value="0" min="0" step="50000" placeholder="8,00,000" />
         </div>
         <div class="form-group">
           <label for="input-savings">Current Savings (₹)</label>
-          <input type="number" id="input-savings" value="300000" min="0" step="10000" placeholder="3,00,000" />
+          <input type="number" id="input-savings" value="0" min="0" step="10000" placeholder="3,00,000" />
         </div>
         <div class="form-group">
           <label for="input-expenses">Monthly Expenses (₹)</label>
-          <input type="number" id="input-expenses" value="35000" min="0" step="1000" placeholder="35,000" />
+          <input type="number" id="input-expenses" value="0" min="0" step="1000" placeholder="35,000" />
         </div>
         <div class="form-group">
-          <label for="input-goal">10-Year Wealth Goal (₹)</label>
-          <input type="number" id="input-goal" value="5000000" min="0" step="100000" placeholder="50,00,000" />
+          <label for="input-goal">Wealth Goal (₹)</label>
+          <input type="number" id="input-goal" value="0" min="0" step="100000" placeholder="50,00,000" />
+        </div>
+        <div class="form-group">
+          <label for="input-years">Goal Timeframe (Years)</label>
+          <input type="number" id="input-years" value="10" min="1" max="50" step="1" placeholder="10" />
         </div>
         <div class="form-group">
           <label for="input-tax-rate">Effective Tax Rate (%)</label>
@@ -299,7 +303,7 @@
       <!-- Metric Cards -->
       <div class="metrics-grid">
         <div class="metric-card glass-card metric-card--median animate-in" id="metric-median">
-          <div class="metric-card__label">Median Net Worth (10yr)</div>
+          <div class="metric-card__label" id="metric-median-label">Median Net Worth</div>
           <div class="metric-card__value">—</div>
           <div class="metric-card__sub">Most likely outcome</div>
         </div>
@@ -342,7 +346,7 @@
       <!-- Fan Chart -->
       <div class="chart-container glass-card animate-in">
         <div class="chart-container__header">
-          <div class="chart-container__title">Wealth Trajectory — 10 Year Projection</div>
+          <div class="chart-container__title" id="chart-title">Wealth Trajectory — Projection</div>
           <div class="chart-legend">
             <div class="chart-legend__item">
               <span class="chart-legend__swatch" style="background: #ffd93d; height: 2px;"></span>
