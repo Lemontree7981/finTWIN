@@ -362,5 +362,159 @@ const ChartRenderer = (() => {
     render(canvas, results, baselineResults, false);
   }
 
-  return { render, handleResize, formatCurrency };
+  // --- Tooltip / Hover Interaction ---
+  let lastRenderParams = null;
+  let tooltipEl = null;
+  let crosshairActive = false;
+
+  function ensureTooltip(canvas) {
+    if (tooltipEl) return tooltipEl;
+    tooltipEl = document.createElement('div');
+    tooltipEl.className = 'chart-tooltip';
+    tooltipEl.innerHTML = '';
+    canvas.parentElement.style.position = 'relative';
+    canvas.parentElement.appendChild(tooltipEl);
+    return tooltipEl;
+  }
+
+  function attachHoverListeners(canvas) {
+    if (canvas._hoverBound) return;
+    canvas._hoverBound = true;
+
+    canvas.addEventListener('mousemove', (e) => {
+      if (!lastRenderParams) return;
+      const rect = canvas.getBoundingClientRect();
+      const mouseX = e.clientX - rect.left;
+      const mouseY = e.clientY - rect.top;
+      handleHover(canvas, mouseX, mouseY);
+    });
+
+    canvas.addEventListener('mouseleave', () => {
+      crosshairActive = false;
+      const tip = ensureTooltip(canvas);
+      tip.classList.remove('visible');
+      // Redraw without crosshair
+      if (lastRenderParams) {
+        const p = lastRenderParams;
+        drawFull(p.ctx, p.w, p.h, p.plotW, p.plotH, p.yearly, p.years, p.yMin, p.yMax, p.xScale, p.yScale, p.baselineResults);
+      }
+    });
+  }
+
+  function handleHover(canvas, mouseX, mouseY) {
+    const p = lastRenderParams;
+    if (!p) return;
+
+    // Determine which year the mouse is closest to
+    const plotLeft = PADDING.left;
+    const plotRight = PADDING.left + p.plotW;
+    if (mouseX < plotLeft || mouseX > plotRight) {
+      const tip = ensureTooltip(canvas);
+      tip.classList.remove('visible');
+      return;
+    }
+
+    const yearFraction = ((mouseX - plotLeft) / p.plotW) * p.years;
+    const year = Math.round(yearFraction);
+    const clampedYear = Math.max(0, Math.min(year, p.years));
+
+    if (clampedYear >= p.yearly.length) return;
+
+    const ys = p.yearly[clampedYear];
+    const xPos = p.xScale(clampedYear);
+
+    // Redraw base chart (no animation)
+    drawFull(p.ctx, p.w, p.h, p.plotW, p.plotH, p.yearly, p.years, p.yMin, p.yMax, p.xScale, p.yScale, p.baselineResults);
+
+    // Draw crosshair line
+    p.ctx.strokeStyle = 'rgba(255, 255, 255, 0.15)';
+    p.ctx.lineWidth = 1;
+    p.ctx.setLineDash([4, 4]);
+    p.ctx.beginPath();
+    p.ctx.moveTo(xPos, PADDING.top);
+    p.ctx.lineTo(xPos, PADDING.top + p.plotH);
+    p.ctx.stroke();
+    p.ctx.setLineDash([]);
+
+    // Draw dots at each percentile
+    const dots = [
+      { key: 'p95', color: 'rgba(0, 212, 170, 0.5)' },
+      { key: 'p75', color: 'rgba(0, 212, 170, 0.7)' },
+      { key: 'median', color: '#ffd93d' },
+      { key: 'p25', color: 'rgba(0, 212, 170, 0.7)' },
+      { key: 'p5', color: 'rgba(255, 107, 107, 0.7)' }
+    ];
+
+    for (const dot of dots) {
+      const dy = p.yScale(ys[dot.key]);
+      p.ctx.fillStyle = dot.color;
+      p.ctx.beginPath();
+      p.ctx.arc(xPos, dy, 4, 0, Math.PI * 2);
+      p.ctx.fill();
+    }
+
+    // Position and fill tooltip
+    const tip = ensureTooltip(canvas);
+    const label = clampedYear === 0 ? 'Now' : `Year ${clampedYear}`;
+    tip.innerHTML = `
+      <div class="chart-tooltip__title">${label}</div>
+      <div class="chart-tooltip__row"><span class="chart-tooltip__label">P95 (Best)</span><span class="chart-tooltip__value chart-tooltip__value--teal">${formatCurrency(ys.p95, true)}</span></div>
+      <div class="chart-tooltip__row"><span class="chart-tooltip__label">P75</span><span class="chart-tooltip__value chart-tooltip__value--dim">${formatCurrency(ys.p75, true)}</span></div>
+      <div class="chart-tooltip__row"><span class="chart-tooltip__label">Median</span><span class="chart-tooltip__value chart-tooltip__value--gold">${formatCurrency(ys.median, true)}</span></div>
+      <div class="chart-tooltip__row"><span class="chart-tooltip__label">P25</span><span class="chart-tooltip__value chart-tooltip__value--dim">${formatCurrency(ys.p25, true)}</span></div>
+      <div class="chart-tooltip__row"><span class="chart-tooltip__label">P5 (Worst)</span><span class="chart-tooltip__value chart-tooltip__value--coral">${formatCurrency(ys.p5, true)}</span></div>
+    `;
+
+    // Position tooltip
+    const tipWidth = 180;
+    let tipX = mouseX + 16;
+    if (tipX + tipWidth > p.w) tipX = mouseX - tipWidth - 16;
+    let tipY = mouseY - 40;
+    if (tipY < 0) tipY = mouseY + 16;
+
+    tip.style.left = tipX + 'px';
+    tip.style.top = tipY + 'px';
+    tip.classList.add('visible');
+    crosshairActive = true;
+  }
+
+  // Override render to store params and attach listeners
+  const _originalRender = render;
+  function renderWithTooltip(canvas, results, baselineResults, animate) {
+    _originalRender(canvas, results, baselineResults, animate);
+
+    // Store params for hover after animation completes
+    const ctx = canvas.getContext('2d');
+    const dpr = window.devicePixelRatio || 1;
+    const rect = canvas.parentElement.getBoundingClientRect();
+    const w = rect.width;
+    const h = rect.height;
+    const plotW = w - PADDING.left - PADDING.right;
+    const plotH = h - PADDING.top - PADDING.bottom;
+    const yearly = results.stats.yearly;
+    const years = results.years;
+
+    let yMin = Infinity, yMax = -Infinity;
+    for (const ys of yearly) {
+      yMin = Math.min(yMin, ys.p5);
+      yMax = Math.max(yMax, ys.p95);
+    }
+    if (baselineResults) {
+      for (const ys of baselineResults.stats.yearly) {
+        yMin = Math.min(yMin, ys.p5);
+        yMax = Math.max(yMax, ys.p95);
+      }
+    }
+    const yRange = yMax - yMin || 1;
+    yMin -= yRange * 0.08;
+    yMax += yRange * 0.08;
+
+    const xScale = (year) => PADDING.left + (year / years) * plotW;
+    const yScale = (val) => PADDING.top + (1 - (val - yMin) / (yMax - yMin)) * plotH;
+
+    lastRenderParams = { ctx, w, h, plotW, plotH, yearly, years, yMin, yMax, xScale, yScale, baselineResults };
+    attachHoverListeners(canvas);
+  }
+
+  return { render: renderWithTooltip, handleResize, formatCurrency };
 })();

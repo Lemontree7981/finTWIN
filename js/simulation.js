@@ -32,7 +32,7 @@ const SimulationEngine = (() => {
 
   /**
    * Run a single simulation path
-   * @param {Object} profile - { salary, savings, monthlyExpenses }
+   * @param {Object} profile - { salary, savings, monthlyExpenses, taxRate }
    * @param {Object} scenario - scenario definition from Scenarios module
    * @param {number} years - simulation horizon
    * @returns {number[]} wealth at end of each year (length = years+1, index 0 = initial)
@@ -42,6 +42,7 @@ const SimulationEngine = (() => {
     let salary = profile.salary;
     let monthlyExpenses = profile.monthlyExpenses;
     let wealth = profile.savings;
+    const taxRate = profile.taxRate || 0; // effective tax rate (0-1)
     let isBusinessRunning = false;
     let businessStartYear = -1;
 
@@ -92,13 +93,30 @@ const SimulationEngine = (() => {
         annualExpenses += scenario.extraAnnualExpense(y, profile);
       }
 
+      // --- Tax ---
+      const postTaxIncome = annualIncome * (1 - taxRate);
+
       // --- Savings ---
-      const netSavings = annualIncome - annualExpenses;
+      const netSavings = postTaxIncome - annualExpenses;
+
+      // --- Dynamic Asset Allocation (Glide Path) ---
+      let effectiveReturnMean = scenario.returnMean ?? 0.10;
+      let effectiveReturnStd = scenario.returnStd ?? 0.18;
+
+      if (scenario.autoRebalance) {
+        // Linearly shift from aggressive to conservative over the years
+        // At year 1: full equity params. At final year: 60% of original return, 50% of original vol
+        const glideProgress = (y - 1) / Math.max(1, years - 1); // 0 at start, 1 at end
+        const returnDampen = 1 - glideProgress * 0.4;  // 1.0 → 0.6
+        const volDampen = 1 - glideProgress * 0.5;     // 1.0 → 0.5
+        effectiveReturnMean *= returnDampen;
+        effectiveReturnStd *= volDampen;
+      }
 
       // --- Investment returns on existing wealth ---
       const investReturn = logNormalReturn(
-        scenario.returnMean ?? 0.10,
-        scenario.returnStd ?? 0.18
+        effectiveReturnMean,
+        effectiveReturnStd
       );
 
       // Wealth = previous wealth * (1 + return) + net savings this year

@@ -8,12 +8,19 @@ const App = (() => {
   let state = {
     profile: null,
     selectedScenario: 'baseline',
+    activeScenarioConfig: null,
     baselineResults: null,
     scenarioResults: null,
     behavioralReport: null,
     isRunning: false,
     chatOpen: false,
-    chatBusy: false
+    chatBusy: false,
+    chatMemory: {
+      goal: null,
+      riskProfile: null,
+      plannedEvents: [],
+      controls: {}
+    }
   };
 
   // --- DOM References ---
@@ -23,6 +30,7 @@ const App = (() => {
     cacheDOMRefs();
     bindEvents();
     selectScenario('baseline');
+    state.activeScenarioConfig = Scenarios.baseline;
     initChat();
     updateHealthIndicators();
   }
@@ -40,6 +48,41 @@ const App = (() => {
     DOM.narrativeContent = document.getElementById('narrative-content');
     DOM.narrativeSource = document.getElementById('narrative-source');
     DOM.customPanel = document.getElementById('custom-panel');
+
+    // Scenario parameter panels
+    DOM.scenarioPanels = {
+      buy_house: document.getElementById('panel-buy-house'),
+      aggressive: document.getElementById('panel-aggressive'),
+      career_switch: document.getElementById('panel-career-switch'),
+      quit_job: document.getElementById('panel-quit-job')
+    };
+
+    // Buy a House inputs
+    DOM.housePrice = document.getElementById('house-price');
+    DOM.houseDownPayment = document.getElementById('house-down-payment');
+    DOM.houseInterestRate = document.getElementById('house-interest-rate');
+    DOM.houseTenure = document.getElementById('house-tenure');
+    DOM.houseMaintenance = document.getElementById('house-maintenance');
+    DOM.houseEmiPreview = document.getElementById('house-emi-preview');
+
+    // Aggressive Investing inputs
+    DOM.aggInitialInvestment = document.getElementById('agg-initial-investment');
+    DOM.aggMonthlyInvestment = document.getElementById('agg-monthly-investment');
+    DOM.aggDuration = document.getElementById('agg-duration');
+    DOM.aggReturnProfile = document.getElementById('agg-return-profile');
+    DOM.aggCrashBehavior = document.getElementById('agg-crash-behavior');
+
+    // Career Switch inputs
+    DOM.careerStability = document.getElementById('career-stability');
+    DOM.careerSwitchTime = document.getElementById('career-switch-time');
+    DOM.careerStartSalary = document.getElementById('career-start-salary');
+    DOM.careerGrowthRate = document.getElementById('career-growth-rate');
+    DOM.careerIncomeGap = document.getElementById('career-income-gap');
+
+    // Business inputs
+    DOM.bizInvestment = document.getElementById('biz-investment');
+    DOM.bizRisk = document.getElementById('biz-risk');
+    DOM.bizCommitment = document.getElementById('biz-commitment');
 
     // Metric cards
     DOM.metricMedian = document.getElementById('metric-median');
@@ -78,7 +121,20 @@ const App = (() => {
     DOM.chatInput = document.getElementById('chat-input');
     DOM.chatSend = document.getElementById('chat-send');
     DOM.chatPrompts = document.getElementById('chat-prompts');
+    DOM.chatMemory = document.getElementById('chat-memory');
     DOM.chatStatus = document.getElementById('chat-status');
+
+    // Tax rate
+    DOM.taxRate = document.getElementById('input-tax-rate');
+
+    // Compare All
+    DOM.compareAllBtn = document.getElementById('compare-all-btn');
+    DOM.compareTableSection = document.getElementById('compare-table-section');
+    DOM.compareTableBody = document.getElementById('compare-table-body');
+    DOM.compareTableClose = document.getElementById('compare-table-close');
+
+    // Confetti
+    DOM.confettiCanvas = document.getElementById('confetti-canvas');
   }
 
   function bindEvents() {
@@ -101,6 +157,19 @@ const App = (() => {
       input.addEventListener('input', debounce(updateHealthIndicators, 300));
     });
 
+    // Scenario panel inputs: Enter key to run + live EMI preview
+    document.querySelectorAll('.scenario-params-panel .form-group input, .scenario-params-panel .form-group select').forEach(input => {
+      input.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') runSimulation();
+      });
+    });
+
+    // Live EMI preview for Buy a House
+    ['house-price', 'house-down-payment', 'house-interest-rate', 'house-tenure', 'house-maintenance'].forEach(id => {
+      const el = document.getElementById(id);
+      if (el) el.addEventListener('input', debounce(updateHouseEmiPreview, 200));
+    });
+
     // Chat events
     DOM.chatFab.addEventListener('click', toggleChat);
     DOM.chatClose.addEventListener('click', closeChat);
@@ -109,7 +178,7 @@ const App = (() => {
       if (e.key === 'Enter') handleChatSend();
     });
 
-    // Window resize â€” re-render chart
+    // Window resize — re-render chart
     let resizeTimer;
     window.addEventListener('resize', () => {
       clearTimeout(resizeTimer);
@@ -119,6 +188,16 @@ const App = (() => {
         }
       }, 200);
     });
+
+    // Compare All
+    if (DOM.compareAllBtn) {
+      DOM.compareAllBtn.addEventListener('click', compareAllScenarios);
+    }
+    if (DOM.compareTableClose) {
+      DOM.compareTableClose.addEventListener('click', () => {
+        DOM.compareTableSection.classList.remove('visible');
+      });
+    }
   }
 
   function debounce(fn, delay) {
@@ -163,8 +242,23 @@ const App = (() => {
       card.classList.toggle('active', card.dataset.scenario === scenarioId);
     });
 
+    // Toggle custom panel
     if (DOM.customPanel) {
       DOM.customPanel.classList.toggle('visible', scenarioId === 'custom');
+    }
+
+    // Toggle scenario-specific parameter panels
+    if (DOM.scenarioPanels) {
+      for (const [id, panel] of Object.entries(DOM.scenarioPanels)) {
+        if (panel) {
+          panel.classList.toggle('visible', id === scenarioId);
+        }
+      }
+    }
+
+    // Update EMI preview when house scenario selected
+    if (scenarioId === 'buy_house') {
+      updateHouseEmiPreview();
     }
   }
 
@@ -174,22 +268,98 @@ const App = (() => {
     const savings = parseFloat(DOM.savings.value) || 300000;
     const monthlyExpenses = parseFloat(DOM.expenses.value) || 35000;
     const goalAmount = parseFloat(DOM.goal.value) || 5000000;
+    const taxRate = (parseFloat(DOM.taxRate?.value) || 30) / 100;
 
-    return { age, salary, savings, monthlyExpenses, goalAmount };
+    return { age, salary, savings, monthlyExpenses, goalAmount, taxRate };
   }
 
   function getScenario() {
     const scenarioId = state.selectedScenario;
-    let scenario = { ...Scenarios[scenarioId] };
 
+    // Custom scenario
     if (scenarioId === 'custom') {
+      let scenario = { ...Scenarios.custom };
       scenario.returnMean = (parseFloat(DOM.customReturnMean?.value) || 10) / 100;
       scenario.returnStd = (parseFloat(DOM.customReturnStd?.value) || 18) / 100;
       scenario.incomeGrowthMean = (parseFloat(DOM.customIncomeGrowth?.value) || 6) / 100;
       scenario.expenseInflationMean = (parseFloat(DOM.customExpenseInflation?.value) || 5) / 100;
+      return scenario;
     }
 
-    return scenario;
+    // Buy a House — build from user inputs
+    if (scenarioId === 'buy_house') {
+      return buildBuyHouseScenario({
+        propertyPrice: parseFloat(DOM.housePrice?.value) || 5000000,
+        downPayment: parseFloat(DOM.houseDownPayment?.value) || 1000000,
+        interestRate: parseFloat(DOM.houseInterestRate?.value) || 8.5,
+        tenureYears: parseInt(DOM.houseTenure?.value) || 20,
+        monthlyMaintenance: parseFloat(DOM.houseMaintenance?.value) || 3000
+      });
+    }
+
+    // Aggressive Investing — build from user inputs
+    if (scenarioId === 'aggressive') {
+      return buildAggressiveScenario({
+        initialInvestment: parseFloat(DOM.aggInitialInvestment?.value) || 100000,
+        monthlyInvestment: parseFloat(DOM.aggMonthlyInvestment?.value) || 10000,
+        durationYears: parseInt(DOM.aggDuration?.value) || 10,
+        returnProfile: DOM.aggReturnProfile?.value || 'aggressive',
+        crashBehavior: DOM.aggCrashBehavior?.value || 'hold'
+      });
+    }
+
+    // Career Switch — build from user inputs
+    if (scenarioId === 'career_switch') {
+      return buildCareerSwitchScenario({
+        jobStability: DOM.careerStability?.value || 'medium',
+        switchTimeYears: parseFloat(DOM.careerSwitchTime?.value) || 1,
+        expectedStartSalary: parseFloat(DOM.careerStartSalary?.value) || 600000,
+        expectedGrowthRate: parseFloat(DOM.careerGrowthRate?.value) || 12,
+        incomeGapMonths: parseInt(DOM.careerIncomeGap?.value) || 3
+      });
+    }
+
+    // Start a Business — build from user inputs
+    if (scenarioId === 'quit_job') {
+      return buildBusinessScenario({
+        investmentAmount: parseFloat(DOM.bizInvestment?.value) || 300000,
+        businessRisk: DOM.bizRisk?.value || 'medium',
+        timeCommitment: DOM.bizCommitment?.value || 'full_time'
+      });
+    }
+
+    // Default: use predefined scenario as-is
+    return { ...Scenarios[scenarioId] };
+  }
+
+  // ===================================================
+  // House EMI Preview
+  // ===================================================
+  function updateHouseEmiPreview() {
+    if (!DOM.houseEmiPreview) return;
+    const price = parseFloat(DOM.housePrice?.value) || 5000000;
+    const down = parseFloat(DOM.houseDownPayment?.value) || 1000000;
+    const rate = parseFloat(DOM.houseInterestRate?.value) || 8.5;
+    const tenure = parseInt(DOM.houseTenure?.value) || 20;
+    const maintenance = parseFloat(DOM.houseMaintenance?.value) || 3000;
+
+    const loan = Math.max(0, price - down);
+    const mr = (rate / 100) / 12;
+    const months = tenure * 12;
+    let emi = 0;
+    if (loan > 0 && mr > 0) {
+      const f = Math.pow(1 + mr, months);
+      emi = loan * mr * f / (f - 1);
+    }
+    const totalCost = emi * months;
+    const totalInterest = totalCost - loan;
+
+    DOM.houseEmiPreview.innerHTML = [
+      `Loan: <strong>₹${(loan / 1e5).toFixed(1)}L</strong>`,
+      `EMI: <strong>₹${Math.round(emi).toLocaleString('en-IN')}/mo</strong>`,
+      `Total Interest: <strong>₹${(totalInterest / 1e5).toFixed(1)}L</strong>`,
+      `Monthly Total: <strong>₹${Math.round(emi + maintenance).toLocaleString('en-IN')}</strong>`
+    ].join(' &nbsp;|&nbsp; ');
   }
 
   // ===================================================
@@ -203,6 +373,7 @@ const App = (() => {
     const baseline = Scenarios.baseline;
 
     state.profile = profile;
+    state.activeScenarioConfig = scenario;
     state.isRunning = true;
 
     DOM.runBtn.classList.add('loading');
@@ -308,6 +479,11 @@ const App = (() => {
         console.error('Narrative generation error:', err);
         DOM.narrativeContent.innerHTML = `<div class="decision-verdict decision-verdict--risky"><strong>Error:</strong> ${err.message}</div>`;
       });
+
+    // Confetti on high goal probability
+    if (results.stats.goalProbability > 80) {
+      launchConfetti();
+    }
   }
 
   // ===================================================
@@ -400,10 +576,191 @@ const App = (() => {
   }
 
   // ===================================================
+  // Compare All Scenarios
+  // ===================================================
+  function compareAllScenarios() {
+    const profile = getProfile();
+    const scenarioIds = ['baseline', 'quit_job', 'aggressive', 'buy_house', 'career_switch'];
+    const allResults = [];
+
+    DOM.compareAllBtn.disabled = true;
+    DOM.compareAllBtn.textContent = 'Running...';
+
+    requestAnimationFrame(() => {
+      setTimeout(() => {
+        try {
+          for (const id of scenarioIds) {
+            const scenario = Scenarios[id];
+            const results = SimulationEngine.simulate(profile, scenario, { years: 10, runs: 1000 });
+            allResults.push({ scenario, results });
+          }
+          renderCompareTable(allResults);
+          DOM.compareTableSection.classList.add('visible');
+          setTimeout(() => {
+            DOM.compareTableSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
+          }, 100);
+        } catch (err) {
+          console.error('Compare all error:', err);
+        } finally {
+          DOM.compareAllBtn.disabled = false;
+          DOM.compareAllBtn.innerHTML = '<span class="compare-all-btn__icon">📊</span><span>Compare All Scenarios</span>';
+        }
+      }, 50);
+    });
+  }
+
+  function renderCompareTable(allResults) {
+    const metrics = [
+      { label: 'Median (P50)', key: 'median', format: 'currency' },
+      { label: 'Best Case (P95)', key: 'p95', format: 'currency' },
+      { label: 'Worst Case (P5)', key: 'p5', format: 'currency' },
+      { label: 'Goal Probability', key: 'goalProbability', format: 'percent' },
+      { label: 'Ruin Probability', key: 'ruinProbability', format: 'percent' }
+    ];
+
+    // Find best/worst for each metric
+    const bestIdx = {};
+    const worstIdx = {};
+    for (const m of metrics) {
+      let bestI = 0, worstI = 0;
+      for (let i = 1; i < allResults.length; i++) {
+        const val = m.key === 'goalProbability' || m.key === 'ruinProbability'
+          ? allResults[i].results.stats[m.key]
+          : allResults[i].results.stats.final[m.key];
+        const bestVal = m.key === 'goalProbability' || m.key === 'ruinProbability'
+          ? allResults[bestI].results.stats[m.key]
+          : allResults[bestI].results.stats.final[m.key];
+        const worstVal = m.key === 'goalProbability' || m.key === 'ruinProbability'
+          ? allResults[worstI].results.stats[m.key]
+          : allResults[worstI].results.stats.final[m.key];
+
+        if (m.key === 'ruinProbability') {
+          if (val < bestVal) bestI = i;
+          if (val > worstVal) worstI = i;
+        } else {
+          if (val > bestVal) bestI = i;
+          if (val < worstVal) worstI = i;
+        }
+      }
+      bestIdx[m.key] = bestI;
+      worstIdx[m.key] = worstI;
+    }
+
+    let html = '<table class="compare-table">';
+    // Header
+    html += '<thead><tr><th>Metric</th>';
+    for (const { scenario } of allResults) {
+      html += `<th><i class="ct-scenario-icon">${scenario.icon}</i> ${scenario.name}</th>`;
+    }
+    html += '</tr></thead><tbody>';
+
+    // Rows
+    for (const m of metrics) {
+      html += '<tr>';
+      html += `<td>${m.label}</td>`;
+      for (let i = 0; i < allResults.length; i++) {
+        const s = allResults[i].results.stats;
+        const val = m.key === 'goalProbability' || m.key === 'ruinProbability'
+          ? s[m.key]
+          : s.final[m.key];
+
+        const isBest = bestIdx[m.key] === i;
+        const isWorst = worstIdx[m.key] === i;
+        const cls = isBest ? 'ct-best' : isWorst ? 'ct-worst' : '';
+
+        const formatted = m.format === 'percent'
+          ? val.toFixed(1) + '%'
+          : ChartRenderer.formatCurrency(val, true);
+
+        html += `<td class="${cls}">${formatted}</td>`;
+      }
+      html += '</tr>';
+    }
+
+    html += '</tbody></table>';
+    DOM.compareTableBody.innerHTML = html;
+  }
+
+  // ===================================================
+  // Confetti System
+  // ===================================================
+  function launchConfetti() {
+    const canvas = DOM.confettiCanvas;
+    if (!canvas) return;
+
+    const ctx = canvas.getContext('2d');
+    canvas.width = window.innerWidth;
+    canvas.height = window.innerHeight;
+
+    const particles = [];
+    const colors = ['#00d4aa', '#ffd93d', '#a78bfa', '#60a5fa', '#ff6b6b', '#4ade80'];
+    const count = 120;
+
+    for (let i = 0; i < count; i++) {
+      particles.push({
+        x: Math.random() * canvas.width,
+        y: Math.random() * canvas.height * 0.3 - canvas.height * 0.1,
+        vx: (Math.random() - 0.5) * 6,
+        vy: Math.random() * 3 + 2,
+        size: Math.random() * 6 + 3,
+        color: colors[Math.floor(Math.random() * colors.length)],
+        rotation: Math.random() * 360,
+        rotationSpeed: (Math.random() - 0.5) * 10,
+        opacity: 1,
+        shape: Math.random() > 0.5 ? 'rect' : 'circle'
+      });
+    }
+
+    let frame = 0;
+    const maxFrames = 180;
+
+    function animate() {
+      frame++;
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+      const fadeStart = maxFrames * 0.6;
+      const globalFade = frame > fadeStart ? 1 - (frame - fadeStart) / (maxFrames - fadeStart) : 1;
+
+      for (const p of particles) {
+        p.x += p.vx;
+        p.vy += 0.08; // gravity
+        p.y += p.vy;
+        p.vx *= 0.99;
+        p.rotation += p.rotationSpeed;
+        p.opacity = globalFade;
+
+        ctx.save();
+        ctx.translate(p.x, p.y);
+        ctx.rotate((p.rotation * Math.PI) / 180);
+        ctx.globalAlpha = p.opacity;
+        ctx.fillStyle = p.color;
+
+        if (p.shape === 'rect') {
+          ctx.fillRect(-p.size / 2, -p.size / 2, p.size, p.size * 0.6);
+        } else {
+          ctx.beginPath();
+          ctx.arc(0, 0, p.size / 2, 0, Math.PI * 2);
+          ctx.fill();
+        }
+        ctx.restore();
+      }
+
+      if (frame < maxFrames) {
+        requestAnimationFrame(animate);
+      } else {
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+      }
+    }
+
+    requestAnimationFrame(animate);
+  }
+
+  // ===================================================
   // Chat System
   // ===================================================
   function initChat() {
     renderSuggestedPrompts();
+    renderChatMemory();
     updateChatStatus();
   }
 
@@ -429,7 +786,12 @@ const App = (() => {
   }
 
   function renderSuggestedPrompts() {
-    const prompts = ChatEngine.getRandomPrompts(4);
+    const plannerPrompts = typeof PlannerEngine !== 'undefined'
+      ? PlannerEngine.getSuggestedPrompts(state.chatMemory)
+      : [];
+    const contextualPrompts = ChatEngine.getContextualPrompts(state.scenarioResults, state.behavioralReport, 6);
+    const prompts = [...new Set([...plannerPrompts, ...contextualPrompts])].slice(0, 4);
+
     if (DOM.chatPrompts) {
       DOM.chatPrompts.innerHTML = prompts.map(p =>
         `<button class="chat-prompt-chip" data-prompt="${p}">${p}</button>`
@@ -442,6 +804,27 @@ const App = (() => {
         });
       });
     }
+  }
+
+  function renderChatMemory() {
+    if (!DOM.chatMemory || typeof PlannerEngine === 'undefined') return;
+
+    const summary = PlannerEngine.buildMemorySummary(state.chatMemory);
+
+    if (!summary.length) {
+      DOM.chatMemory.innerHTML = `
+        <div class="chat-memory__label">Session Memory</div>
+        <div class="chat-memory__empty">No saved goals yet. Mention a timeline, target, or preference and I'll remember it for this session.</div>
+      `;
+      return;
+    }
+
+    DOM.chatMemory.innerHTML = `
+      <div class="chat-memory__label">Session Memory</div>
+      <div class="chat-memory__chips">
+        ${summary.map(item => `<span class="chat-memory__chip">${escapeHtml(item)}</span>`).join('')}
+      </div>
+    `;
   }
 
   function updateChatStatus() {
@@ -508,12 +891,13 @@ const App = (() => {
       selectedScenario: activeScenario,
       latestResults: summarizeResults(overrideResults || state.scenarioResults),
       baselineResults: summarizeResults(overrideBaseline || state.baselineResults),
-      behavioral: summarizeBehavioralReport(overrideBehavioral || state.behavioralReport)
+      behavioral: summarizeBehavioralReport(overrideBehavioral || state.behavioralReport),
+      sessionMemory: state.chatMemory
     };
   }
 
   function buildRemoteChatContext(message, chatRun = null) {
-    const scenario = chatRun?.scenarioResult?.scenario || getScenario();
+    const scenario = chatRun?.scenarioResult?.scenario || state.activeScenarioConfig || getScenario();
     const activeScenario = scenario ? { id: scenario.id, name: scenario.name } : null;
 
     return {
@@ -535,19 +919,28 @@ const App = (() => {
         chatRun?.scenarioResults || null,
         chatRun?.baselineResults || null,
         chatRun?.behavioralReport || null
-      )
+      ),
+      sessionMemory: state.chatMemory
     };
   }
 
-  function runChatScenario(intent) {
-    const profile = getProfile();
-    const scenarioResult = ChatEngine.buildScenarioFromIntent(intent, profile);
-    const chatProfile = { ...profile, ...scenarioResult.profileOverride };
+  function updateChatMemory(message, profile) {
+    if (typeof PlannerEngine === 'undefined') return;
 
-    intent.assumptions = scenarioResult.assumptions;
+    const patch = PlannerEngine.buildMemoryPatch(message, profile);
+    state.chatMemory = PlannerEngine.mergeMemory(state.chatMemory, patch);
+    renderChatMemory();
+  }
+
+  function simulateChatRun(intent, scenarioResult, profile) {
+    const chatProfile = { ...profile, ...(scenarioResult.profileOverride || {}) };
+
+    if (intent) {
+      intent.assumptions = scenarioResult.assumptions || [];
+    }
 
     const simOptions = {
-      years: scenarioResult.simulationOverride?.years || 10,
+      years: scenarioResult.simulationOverride?.years || scenarioResult.simulationYears || 10,
       runs: 1000
     };
 
@@ -565,6 +958,78 @@ const App = (() => {
       scenarioResults,
       behavioralReport
     };
+  }
+
+  function commitChatRun(chatRun) {
+    state.baselineResults = chatRun.baselineResults;
+    state.scenarioResults = chatRun.scenarioResults;
+    state.behavioralReport = chatRun.behavioralReport;
+    state.profile = chatRun.chatProfile;
+    state.activeScenarioConfig = chatRun.scenarioResult.scenario;
+
+    renderResults(
+      chatRun.scenarioResults,
+      chatRun.baselineResults,
+      chatRun.chatProfile,
+      chatRun.scenarioResult.scenario,
+      chatRun.behavioralReport
+    );
+  }
+
+  function applyDashboardControl(control) {
+    if (control.scenarioSelection) {
+      selectScenario(control.scenarioSelection);
+    }
+
+    control.updates.forEach((update) => {
+      switch (update.field) {
+        case 'salary':
+          if (DOM.salary) DOM.salary.value = Math.round(update.value);
+          break;
+        case 'monthlyExpenses':
+          if (DOM.expenses) DOM.expenses.value = Math.round(update.value);
+          break;
+        case 'savings':
+          if (DOM.savings) DOM.savings.value = Math.round(update.value);
+          break;
+        case 'goalAmount':
+          if (DOM.goal) DOM.goal.value = Math.round(update.value);
+          break;
+        case 'taxRatePercent':
+          if (DOM.taxRate) DOM.taxRate.value = update.value;
+          break;
+        case 'customExpenseInflation':
+          if (DOM.customExpenseInflation) DOM.customExpenseInflation.value = update.value;
+          break;
+        case 'customReturnMean':
+          if (DOM.customReturnMean) DOM.customReturnMean.value = update.value;
+          break;
+        case 'customReturnStd':
+          if (DOM.customReturnStd) DOM.customReturnStd.value = update.value;
+          break;
+        default:
+          break;
+      }
+    });
+
+    updateHealthIndicators();
+    if (state.selectedScenario === 'buy_house') updateHouseEmiPreview();
+  }
+
+  function buildControlIntent(control, message) {
+    return {
+      intent: 'dashboard_control',
+      matched: true,
+      originalQuery: message,
+      params: { updates: control.updates },
+      assumptions: control.updates.map((update) => update.label)
+    };
+  }
+
+  function runChatScenario(intent) {
+    const profile = getProfile();
+    const scenarioResult = ChatEngine.buildScenarioFromIntent(intent, profile);
+    return simulateChatRun(intent, scenarioResult, profile);
   }
 
   async function resolveMatchedChatResponse(message, chatRun) {
@@ -589,16 +1054,38 @@ const App = (() => {
     }
   }
 
+  function buildOpenChatLocalContext() {
+    const profile = state.profile || getProfile();
+    const scenario = state.activeScenarioConfig || getScenario();
+    const baselineResults = state.baselineResults || SimulationEngine.simulate(profile, Scenarios.baseline, { years: 10, runs: 800 });
+    const scenarioResults = state.scenarioResults || (
+      scenario.id === 'baseline'
+        ? baselineResults
+        : SimulationEngine.simulate(profile, scenario, { years: 10, runs: 800 })
+    );
+    const behavioralReport = state.behavioralReport || BehavioralEngine.analyze(
+      profile,
+      scenarioResults,
+      baselineResults,
+      scenario
+    );
+
+    return {
+      profile,
+      scenario,
+      results: scenarioResults,
+      baselineResults,
+      behavioralReport,
+      memory: state.chatMemory
+    };
+  }
+
   async function resolveOpenChatResponse(message) {
     if (typeof ChatApi !== 'undefined' && ChatApi.canUseRemote()) {
       return ChatApi.generateReply(buildRemoteChatContext(message));
     }
 
-    if (typeof ChatApi !== 'undefined' && ChatApi.hasApiKey()) {
-      return ChatApi.getSetupHintHtml();
-    }
-
-    return ChatEngine.getUnknownIntentResponse();
+    return ChatEngine.generateGeneralResponse(message, buildOpenChatLocalContext());
   }
 
   async function handleChatSend() {
@@ -614,27 +1101,129 @@ const App = (() => {
     try {
       await wait(350);
 
+      const profile = getProfile();
+      updateChatMemory(message, profile);
+
+      const plannerControl = typeof PlannerEngine !== 'undefined'
+        ? PlannerEngine.detectDashboardControl(message)
+        : { matched: false };
+      const lifePlan = typeof PlannerEngine !== 'undefined'
+        ? PlannerEngine.detectLifePlan(message, profile)
+        : { matched: false };
+      const goalSeek = typeof PlannerEngine !== 'undefined'
+        ? PlannerEngine.detectGoalSeek(message, profile)
+        : { matched: false };
       const intent = ChatEngine.detectIntent(message);
       let responseHtml;
 
-      if (intent.matched) {
-        const chatRun = runChatScenario(intent);
-        responseHtml = await resolveMatchedChatResponse(message, chatRun);
+      // Check for scenario cloning intents
+      const isCloneIntent = intent.intent.startsWith('clone_modify_');
 
-        state.baselineResults = chatRun.baselineResults;
-        state.scenarioResults = chatRun.scenarioResults;
-        state.behavioralReport = chatRun.behavioralReport;
-        state.profile = chatRun.chatProfile;
+      if (plannerControl.matched) {
+        applyDashboardControl(plannerControl);
+
+        const controlIntent = buildControlIntent(plannerControl, message);
+        const controlRun = simulateChatRun(controlIntent, {
+          scenario: getScenario(),
+          profileOverride: {},
+          assumptions: controlIntent.assumptions
+        }, getProfile());
+
+        responseHtml = PlannerEngine.generateDashboardControlResponse(
+          plannerControl,
+          controlRun.scenarioResults,
+          controlRun.baselineResults,
+          controlRun.scenarioResult.scenario
+        );
 
         removeTypingIndicator(typingId);
         addChatMessage(responseHtml, 'ai');
-        renderResults(
-          chatRun.scenarioResults,
-          chatRun.baselineResults,
-          chatRun.chatProfile,
-          chatRun.scenarioResult.scenario,
-          chatRun.behavioralReport
-        );
+        commitChatRun(controlRun);
+      } else if (lifePlan.matched) {
+        const planResult = PlannerEngine.buildLifePlanScenario(lifePlan.plan, profile, state.chatMemory);
+        const planIntent = {
+          intent: 'ai_life_plan',
+          matched: true,
+          originalQuery: message,
+          params: { summary: lifePlan.summary },
+          assumptions: planResult.assumptions
+        };
+        const chatRun = simulateChatRun(planIntent, {
+          scenario: planResult.scenario,
+          profileOverride: lifePlan.plan.goal?.targetAmount ? { goalAmount: lifePlan.plan.goal.targetAmount } : {},
+          assumptions: planResult.assumptions,
+          simulationYears: planResult.simulationYears
+        }, profile);
+
+        responseHtml = PlannerEngine.buildLifePlanResponse(chatRun, state.chatMemory);
+
+        removeTypingIndicator(typingId);
+        addChatMessage(responseHtml, 'ai');
+        commitChatRun(chatRun);
+      } else if (goalSeek.matched) {
+        const goalPlan = PlannerEngine.buildGoalPlan(goalSeek, profile, state.chatMemory);
+        responseHtml = PlannerEngine.buildGoalPlanResponse(goalPlan);
+
+        const goalProfile = { ...profile, goalAmount: goalSeek.targetAmount };
+        const goalScenarioResult = {
+          scenario: goalPlan.displayScenario,
+          profileOverride: { goalAmount: goalSeek.targetAmount },
+          assumptions: [
+            `Target: ${ChatEngine.formatINRShort(goalSeek.targetAmount)}`,
+            `Horizon: ${goalSeek.years} years`,
+            `Risk profile: ${goalPlan.riskProfile}`,
+            goalPlan.requiredExtraMonthly === null
+              ? 'Target gap remains under current assumptions'
+              : `Extra investing needed: Rs ${Math.round(goalPlan.requiredExtraMonthly).toLocaleString('en-IN')}/month`
+          ]
+        };
+        const goalChatRun = {
+          intent: {
+            intent: 'goal_seek',
+            matched: true,
+            originalQuery: message,
+            params: {
+              targetAmount: goalSeek.targetAmount,
+              years: goalSeek.years,
+              targetAge: goalSeek.targetAge || null
+            },
+            assumptions: goalScenarioResult.assumptions
+          },
+          scenarioResult: goalScenarioResult,
+          chatProfile: goalProfile,
+          baselineResults: goalPlan.baselineResults,
+          scenarioResults: goalPlan.targetResults,
+          behavioralReport: BehavioralEngine.analyze(
+            goalProfile,
+            goalPlan.targetResults,
+            goalPlan.baselineResults,
+            goalPlan.displayScenario
+          )
+        };
+
+        removeTypingIndicator(typingId);
+        addChatMessage(responseHtml, 'ai');
+        commitChatRun(goalChatRun);
+      } else if (isCloneIntent) {
+        // Clone current scenario with modifications
+        const activeScenario = state.activeScenarioConfig || (state.scenarioResults?.scenario
+          ? Scenarios[state.scenarioResults.scenario] || Scenarios.baseline
+          : Scenarios[state.selectedScenario] || Scenarios.baseline);
+        const cloneResult = ChatEngine.buildClonedScenario(intent, getProfile(), activeScenario);
+        const chatRun = simulateChatRun(intent, cloneResult, getProfile());
+
+        responseHtml = await resolveMatchedChatResponse(message, chatRun);
+
+        removeTypingIndicator(typingId);
+        addChatMessage(responseHtml, 'ai');
+        commitChatRun(chatRun);
+      } else if (intent.matched) {
+        const chatRun = runChatScenario(intent);
+        responseHtml = await resolveMatchedChatResponse(message, chatRun);
+
+        removeTypingIndicator(typingId);
+        addChatMessage(responseHtml, 'ai');
+        commitChatRun(chatRun);
       } else {
         responseHtml = await resolveOpenChatResponse(message);
         removeTypingIndicator(typingId);
