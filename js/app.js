@@ -41,6 +41,7 @@ const App = (() => {
     DOM.savings = document.getElementById('input-savings');
     DOM.expenses = document.getElementById('input-expenses');
     DOM.goal = document.getElementById('input-goal');
+    DOM.years = document.getElementById('input-years');
     DOM.runBtn = document.getElementById('run-btn');
     DOM.scenarioCards = document.querySelectorAll('.scenario-card');
     DOM.resultsSection = document.getElementById('results-section');
@@ -268,9 +269,10 @@ const App = (() => {
     const savings = parseFloat(DOM.savings.value) || 0;
     const monthlyExpenses = parseFloat(DOM.expenses.value) || 0;
     const goalAmount = parseFloat(DOM.goal.value) || 0;
+    const years = parseInt(DOM.years?.value) || 10;
     const taxRate = (parseFloat(DOM.taxRate?.value) || 30) / 100;
 
-    return { age, salary, savings, monthlyExpenses, goalAmount, taxRate };
+    return { age, salary, savings, monthlyExpenses, goalAmount, years, taxRate };
   }
 
   function getScenario() {
@@ -382,12 +384,12 @@ const App = (() => {
     requestAnimationFrame(() => {
       setTimeout(() => {
         try {
-          state.baselineResults = SimulationEngine.simulate(profile, baseline, { years: 10, runs: 1000 });
+          state.baselineResults = SimulationEngine.simulate(profile, baseline, { years: profile.years, runs: 1000 });
 
           if (scenario.id === 'baseline') {
             state.scenarioResults = state.baselineResults;
           } else {
-            state.scenarioResults = SimulationEngine.simulate(profile, scenario, { years: 10, runs: 1000 });
+            state.scenarioResults = SimulationEngine.simulate(profile, scenario, { years: profile.years, runs: 1000 });
           }
 
           // Run behavioral analysis
@@ -591,7 +593,7 @@ const App = (() => {
         try {
           for (const id of scenarioIds) {
             const scenario = Scenarios[id];
-            const results = SimulationEngine.simulate(profile, scenario, { years: 10, runs: 1000 });
+            const results = SimulationEngine.simulate(profile, scenario, { years: profile.years, runs: 1000 });
             allResults.push({ scenario, results });
           }
           renderCompareTable(allResults);
@@ -940,7 +942,7 @@ const App = (() => {
     }
 
     const simOptions = {
-      years: scenarioResult.simulationOverride?.years || scenarioResult.simulationYears || 10,
+      years: scenarioResult.simulationOverride?.years || scenarioResult.simulationYears || profile.years || 10,
       runs: 1000
     };
 
@@ -1057,11 +1059,11 @@ const App = (() => {
   function buildOpenChatLocalContext() {
     const profile = state.profile || getProfile();
     const scenario = state.activeScenarioConfig || getScenario();
-    const baselineResults = state.baselineResults || SimulationEngine.simulate(profile, Scenarios.baseline, { years: 10, runs: 800 });
+    const baselineResults = state.baselineResults || SimulationEngine.simulate(profile, Scenarios.baseline, { years: profile.years, runs: 800 });
     const scenarioResults = state.scenarioResults || (
       scenario.id === 'baseline'
         ? baselineResults
-        : SimulationEngine.simulate(profile, scenario, { years: 10, runs: 800 })
+        : SimulationEngine.simulate(profile, scenario, { years: profile.years, runs: 800 })
     );
     const behavioralReport = state.behavioralReport || BehavioralEngine.analyze(
       profile,
