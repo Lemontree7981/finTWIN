@@ -41,6 +41,41 @@ const App = (() => {
     DOM.narrativeSource = document.getElementById('narrative-source');
     DOM.customPanel = document.getElementById('custom-panel');
 
+    // Scenario parameter panels
+    DOM.scenarioPanels = {
+      buy_house: document.getElementById('panel-buy-house'),
+      aggressive: document.getElementById('panel-aggressive'),
+      career_switch: document.getElementById('panel-career-switch'),
+      quit_job: document.getElementById('panel-quit-job')
+    };
+
+    // Buy a House inputs
+    DOM.housePrice = document.getElementById('house-price');
+    DOM.houseDownPayment = document.getElementById('house-down-payment');
+    DOM.houseInterestRate = document.getElementById('house-interest-rate');
+    DOM.houseTenure = document.getElementById('house-tenure');
+    DOM.houseMaintenance = document.getElementById('house-maintenance');
+    DOM.houseEmiPreview = document.getElementById('house-emi-preview');
+
+    // Aggressive Investing inputs
+    DOM.aggInitialInvestment = document.getElementById('agg-initial-investment');
+    DOM.aggMonthlyInvestment = document.getElementById('agg-monthly-investment');
+    DOM.aggDuration = document.getElementById('agg-duration');
+    DOM.aggReturnProfile = document.getElementById('agg-return-profile');
+    DOM.aggCrashBehavior = document.getElementById('agg-crash-behavior');
+
+    // Career Switch inputs
+    DOM.careerStability = document.getElementById('career-stability');
+    DOM.careerSwitchTime = document.getElementById('career-switch-time');
+    DOM.careerStartSalary = document.getElementById('career-start-salary');
+    DOM.careerGrowthRate = document.getElementById('career-growth-rate');
+    DOM.careerIncomeGap = document.getElementById('career-income-gap');
+
+    // Business inputs
+    DOM.bizInvestment = document.getElementById('biz-investment');
+    DOM.bizRisk = document.getElementById('biz-risk');
+    DOM.bizCommitment = document.getElementById('biz-commitment');
+
     // Metric cards
     DOM.metricMedian = document.getElementById('metric-median');
     DOM.metricBest = document.getElementById('metric-best');
@@ -79,6 +114,18 @@ const App = (() => {
     DOM.chatSend = document.getElementById('chat-send');
     DOM.chatPrompts = document.getElementById('chat-prompts');
     DOM.chatStatus = document.getElementById('chat-status');
+
+    // Tax rate
+    DOM.taxRate = document.getElementById('input-tax-rate');
+
+    // Compare All
+    DOM.compareAllBtn = document.getElementById('compare-all-btn');
+    DOM.compareTableSection = document.getElementById('compare-table-section');
+    DOM.compareTableBody = document.getElementById('compare-table-body');
+    DOM.compareTableClose = document.getElementById('compare-table-close');
+
+    // Confetti
+    DOM.confettiCanvas = document.getElementById('confetti-canvas');
   }
 
   function bindEvents() {
@@ -101,6 +148,19 @@ const App = (() => {
       input.addEventListener('input', debounce(updateHealthIndicators, 300));
     });
 
+    // Scenario panel inputs: Enter key to run + live EMI preview
+    document.querySelectorAll('.scenario-params-panel .form-group input, .scenario-params-panel .form-group select').forEach(input => {
+      input.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') runSimulation();
+      });
+    });
+
+    // Live EMI preview for Buy a House
+    ['house-price', 'house-down-payment', 'house-interest-rate', 'house-tenure', 'house-maintenance'].forEach(id => {
+      const el = document.getElementById(id);
+      if (el) el.addEventListener('input', debounce(updateHouseEmiPreview, 200));
+    });
+
     // Chat events
     DOM.chatFab.addEventListener('click', toggleChat);
     DOM.chatClose.addEventListener('click', closeChat);
@@ -109,7 +169,7 @@ const App = (() => {
       if (e.key === 'Enter') handleChatSend();
     });
 
-    // Window resize â€” re-render chart
+    // Window resize — re-render chart
     let resizeTimer;
     window.addEventListener('resize', () => {
       clearTimeout(resizeTimer);
@@ -119,6 +179,16 @@ const App = (() => {
         }
       }, 200);
     });
+
+    // Compare All
+    if (DOM.compareAllBtn) {
+      DOM.compareAllBtn.addEventListener('click', compareAllScenarios);
+    }
+    if (DOM.compareTableClose) {
+      DOM.compareTableClose.addEventListener('click', () => {
+        DOM.compareTableSection.classList.remove('visible');
+      });
+    }
   }
 
   function debounce(fn, delay) {
@@ -163,8 +233,23 @@ const App = (() => {
       card.classList.toggle('active', card.dataset.scenario === scenarioId);
     });
 
+    // Toggle custom panel
     if (DOM.customPanel) {
       DOM.customPanel.classList.toggle('visible', scenarioId === 'custom');
+    }
+
+    // Toggle scenario-specific parameter panels
+    if (DOM.scenarioPanels) {
+      for (const [id, panel] of Object.entries(DOM.scenarioPanels)) {
+        if (panel) {
+          panel.classList.toggle('visible', id === scenarioId);
+        }
+      }
+    }
+
+    // Update EMI preview when house scenario selected
+    if (scenarioId === 'buy_house') {
+      updateHouseEmiPreview();
     }
   }
 
@@ -174,22 +259,98 @@ const App = (() => {
     const savings = parseFloat(DOM.savings.value) || 300000;
     const monthlyExpenses = parseFloat(DOM.expenses.value) || 35000;
     const goalAmount = parseFloat(DOM.goal.value) || 5000000;
+    const taxRate = (parseFloat(DOM.taxRate?.value) || 30) / 100;
 
-    return { age, salary, savings, monthlyExpenses, goalAmount };
+    return { age, salary, savings, monthlyExpenses, goalAmount, taxRate };
   }
 
   function getScenario() {
     const scenarioId = state.selectedScenario;
-    let scenario = { ...Scenarios[scenarioId] };
 
+    // Custom scenario
     if (scenarioId === 'custom') {
+      let scenario = { ...Scenarios.custom };
       scenario.returnMean = (parseFloat(DOM.customReturnMean?.value) || 10) / 100;
       scenario.returnStd = (parseFloat(DOM.customReturnStd?.value) || 18) / 100;
       scenario.incomeGrowthMean = (parseFloat(DOM.customIncomeGrowth?.value) || 6) / 100;
       scenario.expenseInflationMean = (parseFloat(DOM.customExpenseInflation?.value) || 5) / 100;
+      return scenario;
     }
 
-    return scenario;
+    // Buy a House — build from user inputs
+    if (scenarioId === 'buy_house') {
+      return buildBuyHouseScenario({
+        propertyPrice: parseFloat(DOM.housePrice?.value) || 5000000,
+        downPayment: parseFloat(DOM.houseDownPayment?.value) || 1000000,
+        interestRate: parseFloat(DOM.houseInterestRate?.value) || 8.5,
+        tenureYears: parseInt(DOM.houseTenure?.value) || 20,
+        monthlyMaintenance: parseFloat(DOM.houseMaintenance?.value) || 3000
+      });
+    }
+
+    // Aggressive Investing — build from user inputs
+    if (scenarioId === 'aggressive') {
+      return buildAggressiveScenario({
+        initialInvestment: parseFloat(DOM.aggInitialInvestment?.value) || 100000,
+        monthlyInvestment: parseFloat(DOM.aggMonthlyInvestment?.value) || 10000,
+        durationYears: parseInt(DOM.aggDuration?.value) || 10,
+        returnProfile: DOM.aggReturnProfile?.value || 'aggressive',
+        crashBehavior: DOM.aggCrashBehavior?.value || 'hold'
+      });
+    }
+
+    // Career Switch — build from user inputs
+    if (scenarioId === 'career_switch') {
+      return buildCareerSwitchScenario({
+        jobStability: DOM.careerStability?.value || 'medium',
+        switchTimeYears: parseFloat(DOM.careerSwitchTime?.value) || 1,
+        expectedStartSalary: parseFloat(DOM.careerStartSalary?.value) || 600000,
+        expectedGrowthRate: parseFloat(DOM.careerGrowthRate?.value) || 12,
+        incomeGapMonths: parseInt(DOM.careerIncomeGap?.value) || 3
+      });
+    }
+
+    // Start a Business — build from user inputs
+    if (scenarioId === 'quit_job') {
+      return buildBusinessScenario({
+        investmentAmount: parseFloat(DOM.bizInvestment?.value) || 300000,
+        businessRisk: DOM.bizRisk?.value || 'medium',
+        timeCommitment: DOM.bizCommitment?.value || 'full_time'
+      });
+    }
+
+    // Default: use predefined scenario as-is
+    return { ...Scenarios[scenarioId] };
+  }
+
+  // ===================================================
+  // House EMI Preview
+  // ===================================================
+  function updateHouseEmiPreview() {
+    if (!DOM.houseEmiPreview) return;
+    const price = parseFloat(DOM.housePrice?.value) || 5000000;
+    const down = parseFloat(DOM.houseDownPayment?.value) || 1000000;
+    const rate = parseFloat(DOM.houseInterestRate?.value) || 8.5;
+    const tenure = parseInt(DOM.houseTenure?.value) || 20;
+    const maintenance = parseFloat(DOM.houseMaintenance?.value) || 3000;
+
+    const loan = Math.max(0, price - down);
+    const mr = (rate / 100) / 12;
+    const months = tenure * 12;
+    let emi = 0;
+    if (loan > 0 && mr > 0) {
+      const f = Math.pow(1 + mr, months);
+      emi = loan * mr * f / (f - 1);
+    }
+    const totalCost = emi * months;
+    const totalInterest = totalCost - loan;
+
+    DOM.houseEmiPreview.innerHTML = [
+      `Loan: <strong>₹${(loan / 1e5).toFixed(1)}L</strong>`,
+      `EMI: <strong>₹${Math.round(emi).toLocaleString('en-IN')}/mo</strong>`,
+      `Total Interest: <strong>₹${(totalInterest / 1e5).toFixed(1)}L</strong>`,
+      `Monthly Total: <strong>₹${Math.round(emi + maintenance).toLocaleString('en-IN')}</strong>`
+    ].join(' &nbsp;|&nbsp; ');
   }
 
   // ===================================================
@@ -308,6 +469,11 @@ const App = (() => {
         console.error('Narrative generation error:', err);
         DOM.narrativeContent.innerHTML = `<div class="decision-verdict decision-verdict--risky"><strong>Error:</strong> ${err.message}</div>`;
       });
+
+    // Confetti on high goal probability
+    if (results.stats.goalProbability > 80) {
+      launchConfetti();
+    }
   }
 
   // ===================================================
@@ -400,6 +566,186 @@ const App = (() => {
   }
 
   // ===================================================
+  // Compare All Scenarios
+  // ===================================================
+  function compareAllScenarios() {
+    const profile = getProfile();
+    const scenarioIds = ['baseline', 'quit_job', 'aggressive', 'buy_house', 'career_switch'];
+    const allResults = [];
+
+    DOM.compareAllBtn.disabled = true;
+    DOM.compareAllBtn.textContent = 'Running...';
+
+    requestAnimationFrame(() => {
+      setTimeout(() => {
+        try {
+          for (const id of scenarioIds) {
+            const scenario = Scenarios[id];
+            const results = SimulationEngine.simulate(profile, scenario, { years: 10, runs: 1000 });
+            allResults.push({ scenario, results });
+          }
+          renderCompareTable(allResults);
+          DOM.compareTableSection.classList.add('visible');
+          setTimeout(() => {
+            DOM.compareTableSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
+          }, 100);
+        } catch (err) {
+          console.error('Compare all error:', err);
+        } finally {
+          DOM.compareAllBtn.disabled = false;
+          DOM.compareAllBtn.innerHTML = '<span class="compare-all-btn__icon">📊</span><span>Compare All Scenarios</span>';
+        }
+      }, 50);
+    });
+  }
+
+  function renderCompareTable(allResults) {
+    const metrics = [
+      { label: 'Median (P50)', key: 'median', format: 'currency' },
+      { label: 'Best Case (P95)', key: 'p95', format: 'currency' },
+      { label: 'Worst Case (P5)', key: 'p5', format: 'currency' },
+      { label: 'Goal Probability', key: 'goalProbability', format: 'percent' },
+      { label: 'Ruin Probability', key: 'ruinProbability', format: 'percent' }
+    ];
+
+    // Find best/worst for each metric
+    const bestIdx = {};
+    const worstIdx = {};
+    for (const m of metrics) {
+      let bestI = 0, worstI = 0;
+      for (let i = 1; i < allResults.length; i++) {
+        const val = m.key === 'goalProbability' || m.key === 'ruinProbability'
+          ? allResults[i].results.stats[m.key]
+          : allResults[i].results.stats.final[m.key];
+        const bestVal = m.key === 'goalProbability' || m.key === 'ruinProbability'
+          ? allResults[bestI].results.stats[m.key]
+          : allResults[bestI].results.stats.final[m.key];
+        const worstVal = m.key === 'goalProbability' || m.key === 'ruinProbability'
+          ? allResults[worstI].results.stats[m.key]
+          : allResults[worstI].results.stats.final[m.key];
+
+        if (m.key === 'ruinProbability') {
+          if (val < bestVal) bestI = i;
+          if (val > worstVal) worstI = i;
+        } else {
+          if (val > bestVal) bestI = i;
+          if (val < worstVal) worstI = i;
+        }
+      }
+      bestIdx[m.key] = bestI;
+      worstIdx[m.key] = worstI;
+    }
+
+    let html = '<table class="compare-table">';
+    // Header
+    html += '<thead><tr><th>Metric</th>';
+    for (const { scenario } of allResults) {
+      html += `<th><i class="ct-scenario-icon">${scenario.icon}</i> ${scenario.name}</th>`;
+    }
+    html += '</tr></thead><tbody>';
+
+    // Rows
+    for (const m of metrics) {
+      html += '<tr>';
+      html += `<td>${m.label}</td>`;
+      for (let i = 0; i < allResults.length; i++) {
+        const s = allResults[i].results.stats;
+        const val = m.key === 'goalProbability' || m.key === 'ruinProbability'
+          ? s[m.key]
+          : s.final[m.key];
+
+        const isBest = bestIdx[m.key] === i;
+        const isWorst = worstIdx[m.key] === i;
+        const cls = isBest ? 'ct-best' : isWorst ? 'ct-worst' : '';
+
+        const formatted = m.format === 'percent'
+          ? val.toFixed(1) + '%'
+          : ChartRenderer.formatCurrency(val, true);
+
+        html += `<td class="${cls}">${formatted}</td>`;
+      }
+      html += '</tr>';
+    }
+
+    html += '</tbody></table>';
+    DOM.compareTableBody.innerHTML = html;
+  }
+
+  // ===================================================
+  // Confetti System
+  // ===================================================
+  function launchConfetti() {
+    const canvas = DOM.confettiCanvas;
+    if (!canvas) return;
+
+    const ctx = canvas.getContext('2d');
+    canvas.width = window.innerWidth;
+    canvas.height = window.innerHeight;
+
+    const particles = [];
+    const colors = ['#00d4aa', '#ffd93d', '#a78bfa', '#60a5fa', '#ff6b6b', '#4ade80'];
+    const count = 120;
+
+    for (let i = 0; i < count; i++) {
+      particles.push({
+        x: Math.random() * canvas.width,
+        y: Math.random() * canvas.height * 0.3 - canvas.height * 0.1,
+        vx: (Math.random() - 0.5) * 6,
+        vy: Math.random() * 3 + 2,
+        size: Math.random() * 6 + 3,
+        color: colors[Math.floor(Math.random() * colors.length)],
+        rotation: Math.random() * 360,
+        rotationSpeed: (Math.random() - 0.5) * 10,
+        opacity: 1,
+        shape: Math.random() > 0.5 ? 'rect' : 'circle'
+      });
+    }
+
+    let frame = 0;
+    const maxFrames = 180;
+
+    function animate() {
+      frame++;
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+      const fadeStart = maxFrames * 0.6;
+      const globalFade = frame > fadeStart ? 1 - (frame - fadeStart) / (maxFrames - fadeStart) : 1;
+
+      for (const p of particles) {
+        p.x += p.vx;
+        p.vy += 0.08; // gravity
+        p.y += p.vy;
+        p.vx *= 0.99;
+        p.rotation += p.rotationSpeed;
+        p.opacity = globalFade;
+
+        ctx.save();
+        ctx.translate(p.x, p.y);
+        ctx.rotate((p.rotation * Math.PI) / 180);
+        ctx.globalAlpha = p.opacity;
+        ctx.fillStyle = p.color;
+
+        if (p.shape === 'rect') {
+          ctx.fillRect(-p.size / 2, -p.size / 2, p.size, p.size * 0.6);
+        } else {
+          ctx.beginPath();
+          ctx.arc(0, 0, p.size / 2, 0, Math.PI * 2);
+          ctx.fill();
+        }
+        ctx.restore();
+      }
+
+      if (frame < maxFrames) {
+        requestAnimationFrame(animate);
+      } else {
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+      }
+    }
+
+    requestAnimationFrame(animate);
+  }
+
+  // ===================================================
   // Chat System
   // ===================================================
   function initChat() {
@@ -429,7 +775,7 @@ const App = (() => {
   }
 
   function renderSuggestedPrompts() {
-    const prompts = ChatEngine.getRandomPrompts(4);
+    const prompts = ChatEngine.getContextualPrompts(state.scenarioResults, state.behavioralReport, 4);
     if (DOM.chatPrompts) {
       DOM.chatPrompts.innerHTML = prompts.map(p =>
         `<button class="chat-prompt-chip" data-prompt="${p}">${p}</button>`
@@ -617,7 +963,44 @@ const App = (() => {
       const intent = ChatEngine.detectIntent(message);
       let responseHtml;
 
-      if (intent.matched) {
+      // Check for scenario cloning intents
+      const isCloneIntent = intent.intent.startsWith('clone_modify_');
+
+      if (isCloneIntent) {
+        // Clone current scenario with modifications
+        const activeScenario = state.scenarioResults?.scenario
+          ? Scenarios[state.scenarioResults.scenario] || Scenarios.baseline
+          : Scenarios[state.selectedScenario] || Scenarios.baseline;
+        const cloneResult = ChatEngine.buildClonedScenario(intent, getProfile(), activeScenario);
+        intent.matched = true;
+        intent.assumptions = cloneResult.assumptions;
+
+        const chatRun = {
+          intent,
+          scenarioResult: cloneResult,
+          chatProfile: { ...getProfile(), ...cloneResult.profileOverride },
+          baselineResults: SimulationEngine.simulate({ ...getProfile(), ...cloneResult.profileOverride }, Scenarios.baseline, { years: 10, runs: 1000 }),
+          scenarioResults: SimulationEngine.simulate({ ...getProfile(), ...cloneResult.profileOverride }, cloneResult.scenario, { years: 10, runs: 1000 }),
+          behavioralReport: null
+        };
+        chatRun.behavioralReport = BehavioralEngine.analyze(
+          chatRun.chatProfile, chatRun.scenarioResults, chatRun.baselineResults, cloneResult.scenario
+        );
+
+        responseHtml = await resolveMatchedChatResponse(message, chatRun);
+
+        state.baselineResults = chatRun.baselineResults;
+        state.scenarioResults = chatRun.scenarioResults;
+        state.behavioralReport = chatRun.behavioralReport;
+        state.profile = chatRun.chatProfile;
+
+        removeTypingIndicator(typingId);
+        addChatMessage(responseHtml, 'ai');
+        renderResults(
+          chatRun.scenarioResults, chatRun.baselineResults,
+          chatRun.chatProfile, cloneResult.scenario, chatRun.behavioralReport
+        );
+      } else if (intent.matched) {
         const chatRun = runChatScenario(intent);
         responseHtml = await resolveMatchedChatResponse(message, chatRun);
 

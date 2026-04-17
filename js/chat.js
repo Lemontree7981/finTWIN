@@ -85,6 +85,25 @@ const ChatEngine = (() => {
       patterns: [/(?:what if|suppose|if)\s+(?:my\s+)?(?:salary|income)\s+(?:is|becomes|was|were|changes?\s+to)\s+(?:₹|rs\.?\s*)?(\d[\d,]*\s*(?:lakh|lac|l|crore|cr|lpa|per\s+annum)?)/i],
       intent: 'salary_change',
       extract: (match) => ({ amount: parseAmount(match[1]) })
+    },
+    // Scenario cloning / modifications
+    {
+      patterns: [/(?:same|that)\s+(?:scenario|simulation)\s+(?:but|with|if)\s+(?:my\s+)?(?:expenses?|spending)\s+(?:(?:are|were|was|of|at|become)\s+)?(?:₹|rs\.?\s*)?(\d[\d,]*)\s*(?:\/|per|a)?\s*(?:month)?/i,
+                 /(?:same|that)\s+(?:scenario|simulation)\s+(?:but|with|if)\s+(?:₹|rs\.?\s*)?(\d[\d,]*)\s*(?:less|lower|fewer|reduced)\s+(?:expenses?|spending)/i],
+      intent: 'clone_modify_expenses',
+      extract: (match) => ({ amount: parseFloat(match[1].replace(/,/g, '')) })
+    },
+    {
+      patterns: [/(?:same|that)\s+(?:scenario|simulation)\s+(?:but|with|if)\s+(?:a\s+)?(\d+)\s*%?\s*(?:raise|hike|salary increase|more salary|higher salary)/i,
+                 /(?:same|that)\s+(?:scenario|simulation)\s+(?:but|with|if)\s+(?:my\s+)?(?:salary|income)\s+(?:is|at|of|becomes?)\s+(?:₹|rs\.?\s*)?(\d[\d,]*\s*(?:lakh|lac|l|crore|cr|lpa)?)/i],
+      intent: 'clone_modify_salary',
+      extract: (match) => {
+        const raw = match[1].replace(/,/g, '');
+        if (/lakh|lac|l\b|lpa|crore|cr/i.test(match[0])) {
+          return { amount: parseAmount(match[1]) };
+        }
+        return { percent: parseFloat(raw) };
+      }
     }
   ];
 
@@ -334,6 +353,49 @@ const ChatEngine = (() => {
     };
   }
 
+  /**
+   * Build a cloned scenario with modifications
+   * Uses the currently active scenario as a base and applies overrides
+   */
+  function buildClonedScenario(intent, profile, activeScenario) {
+    const base = activeScenario ? { ...activeScenario } : { ...Scenarios.baseline };
+    let assumptions = [`Based on: ${base.name || 'Current Scenario'}`];
+    let scenarioName = base.name || 'Modified Scenario';
+    let profileOverride = {};
+
+    switch (intent.intent) {
+      case 'clone_modify_expenses': {
+        const newExp = intent.params.amount;
+        scenarioName = `${base.name} + ₹${(newExp / 1000).toFixed(0)}K expenses`;
+        assumptions.push(`Monthly expenses changed to ₹${newExp.toLocaleString('en-IN')}`);
+        profileOverride.monthlyExpenses = newExp;
+        break;
+      }
+      case 'clone_modify_salary': {
+        if (intent.params.amount) {
+          const newSalary = intent.params.amount;
+          scenarioName = `${base.name} + ₹${formatINRShort(newSalary)} salary`;
+          assumptions.push(`Salary changed to ${formatINRShort(newSalary)}`);
+          profileOverride.salary = newSalary;
+        } else if (intent.params.percent) {
+          const pct = intent.params.percent;
+          const newSalary = profile.salary * (1 + pct / 100);
+          scenarioName = `${base.name} + ${pct}% raise`;
+          assumptions.push(`Salary increased by ${pct}% to ${formatINRShort(newSalary)}`);
+          profileOverride.salary = newSalary;
+        }
+        break;
+      }
+    }
+
+    return {
+      scenario: { ...base, id: 'chat_clone_' + Date.now(), name: scenarioName },
+      profileOverride,
+      assumptions,
+      scenarioName
+    };
+  }
+
   // --- Chat Response Generator ---
   function generateChatResponse(intent, results, baselineResults, profile, scenario, behavioralReport) {
     const s = results.stats;
@@ -550,13 +612,71 @@ const ChatEngine = (() => {
     return shuffled.slice(0, count);
   }
 
+  /**
+   * Generate contextual prompts based on simulation results and behavioral report
+   */
+  function getContextualPrompts(results, behavioralReport, count = 4) {
+    if (!results || !results.stats) {
+      return getRandomPrompts(count);
+    }
+
+    const s = results.stats;
+    const contextual = [];
+
+    // Based on ruin probability
+    if (s.ruinProbability > 10) {
+      contextual.push('How can I reduce my ruin risk?');
+    }
+
+    // Based on goal probability
+    if (s.goalProbability < 40) {
+      contextual.push('How much more do I need to save to reach my goal?');
+      contextual.push('What if I invest aggressively?');
+    } else if (s.goalProbability > 80) {
+      contextual.push('Can I retire 5 years earlier?');
+    }
+
+    // Based on behavioral report
+    if (behavioralReport) {
+      if (behavioralReport.savingsRate < 20) {
+        contextual.push('What if I cut expenses by 20%?');
+      }
+      if (behavioralReport.emergencyMonths < 6) {
+        contextual.push('What if I lose my job?');
+      }
+      if (behavioralReport.expenseRatio > 60) {
+        contextual.push(`What if expenses become ₹${Math.round(behavioralReport.expenseRatio * 0.7 / 100 * 66667).toLocaleString('en-IN')}/month?`);
+      }
+    }
+
+    // Based on worst case
+    if (s.final.p5 < 0) {
+      contextual.push('What if I invest conservatively?');
+    }
+
+    // Scenario cloning prompts (always useful)
+    contextual.push('Same scenario but with a 30% raise');
+
+    // Deduplicate and fill remaining with random
+    const unique = [...new Set(contextual)];
+    if (unique.length < count) {
+      const remaining = SUGGESTED_PROMPTS.filter(p => !unique.includes(p));
+      const shuffled = remaining.sort(() => Math.random() - 0.5);
+      unique.push(...shuffled.slice(0, count - unique.length));
+    }
+
+    return unique.slice(0, count);
+  }
+
   return {
     detectIntent,
     buildScenarioFromIntent,
+    buildClonedScenario,
     buildAiContext,
     generateChatResponse,
     getUnknownIntentResponse,
     getRandomPrompts,
+    getContextualPrompts,
     formatINRShort,
     SUGGESTED_PROMPTS
   };
